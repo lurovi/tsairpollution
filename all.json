@@ -1,0 +1,15 @@
+{
+	"data": ["data/formatted/volontari.csv"],
+	"features": ["season,time_of_day,dew_point,NUM_MEASUREMENTS,BM_P_MEAN,GPS_KMH_MEAN,GPS_DIR_MEAN,GPS_ALT_MEAN,PM10_MEAN"],
+	"encoding": ["onehot"],
+	"scaling": ["robust"],
+	"augmentation": ["none"],
+	"model": ["cocal_only", "basic_median_delta", "linear", "elasticnet", "decision_tree", "symbolic_regression", "svr", "random_forest", "bagging", "gradient_boosting", "adaboost", "mlp"],
+	"test_size": [0.3],
+	"n_iter": [40],
+	"cv": [4],
+        "linear_scaling": [0],
+	"log_scale_target": [0],
+	"seed_index": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35],
+	"n_train_records": [0]
+}
