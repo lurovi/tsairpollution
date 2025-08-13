@@ -15,7 +15,7 @@ setup(
     description='TS Air Pollution',
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
-    url='https://github.com/lurovi/ts-air-pollution',
+    url='https://github.com/lurovi/tsairpollution',
     classifiers=[
         'Programming Language :: Python :: 3',
         'License :: OSI Approved :: MIT License',
