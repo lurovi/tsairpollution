@@ -27,7 +27,7 @@ from prettytable import PrettyTable
 import os
 
 from tsairpoll.model_evaluation import evaluate_model
-from tsairpoll.utils import load_pkl
+from tsairpoll.utils import load_pkl, only_first_char_upper
 from tsairpoll.stat_test import perform_mannwhitneyu_holm_bonferroni
 
 
@@ -307,6 +307,87 @@ def print_basic_scores(metric, path, dataset, features, encoding, scaling, augme
 # PLOTS
 # ======================================================================================
 
+
+def create_lineplot_single_repetition(path, dataset, features, selected_features, encoding, scaling, augmentation, model, test_size, n_iter, cv, linear_scaling, log_scale_target, n_train_records, seed_index):
+    df = load_data(f'../data/formatted/{dataset}.csv')
+    timestamps = load_data(f'../data/formatted/{dataset}_timestamps.csv')
+
+    with open('../random_seeds.txt', 'r') as f:
+        # THE ACTUAL SEED TO BE USED IS LOCATED AT POSITION seed_index - 1 SINCE seed_index IS AN INDEX THAT STARTS FROM 1
+        all_actual_seeds = [int(curr_actual_seed_as_str) for curr_actual_seed_as_str in f.readlines()]
+    seed = all_actual_seeds[seed_index - 1]
+
+    random.seed(seed)
+    np.random.seed(seed)
+
+    target = df.columns[-1]
+    if len(selected_features) == 0:
+        df = df.copy()
+    else:
+        df = df[selected_features + [target]].copy()
+
+    categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
+    numerical_cols = df.select_dtypes(include=['number']).columns.tolist()
+    numerical_cols.remove(target)
+
+    # Split data
+    train_df, train_timestamp, test_df, test_timestamp = split_data(df, timestamps, test_size=test_size,
+                                                                    random_state=seed, sort=False)
+
+    X_train = train_df.iloc[:, :-1]
+    y_train = train_df[target].to_numpy()
+
+    if n_train_records > 0:
+        X_train = X_train.iloc[:n_train_records,:]
+        y_train = y_train[:n_train_records]
+
+        if isinstance(train_timestamp, pd.Series):
+            train_timestamp = train_timestamp.iloc[:n_train_records]
+        else:
+            train_timestamp = train_timestamp.iloc[:n_train_records, :]
+
+    X_test = test_df.iloc[:, :-1]
+    y_test = test_df[target].to_numpy()
+
+    y_train = np.where(y_train == 0.0, 0.00000001, y_train)
+
+    s = create_dir_path_results(
+        base_path=path,
+        dataset=dataset,
+        features=features,
+        encoding=encoding,
+        scaling=scaling,
+        augmentation=augmentation,
+        model=model,
+        test_size=test_size,
+        n_iter=n_iter,
+        cv=cv,
+        linear_scaling=linear_scaling,
+        log_scale_target=log_scale_target,
+        n_train_records=n_train_records,
+    )
+
+    search = load_pkl(os.path.join(s, f'search{seed_index}.pkl'))
+
+    s = create_dir_path_results(
+        base_path=path,
+        dataset=dataset,
+        features=features,
+        encoding=encoding,
+        scaling=scaling,
+        augmentation=augmentation,
+        model=model,
+        test_size=test_size,
+        n_iter=n_iter,
+        cv=cv,
+        linear_scaling=linear_scaling,
+        log_scale_target=log_scale_target,
+        n_train_records=n_train_records,
+    )
+
+    search = load_pkl(os.path.join(s, f'search{seed_index}.pkl'))
+
+
 def my_callback_function_that_actually_draws_boxplot(plt, data, marked_models, dataset_split_palette, x_label="Model", y_label="MAE", title=None):
     figsize = (10, 6)
     fig, ax = plt.subplots(figsize=figsize, layout='constrained')
@@ -348,21 +429,38 @@ def export_mae_boxplot(path, zone, dataset, features, encoding, scaling, augment
     model_values = {}
 
     for model in models:
-        model_path = create_dir_path_results(
-            base_path=path,
-            dataset=dataset,
-            features=features,
-            encoding=encoding,
-            scaling=scaling,
-            augmentation=augmentation,
-            model=model,
-            test_size=test_size,
-            n_iter=n_iter,
-            cv=cv,
-            linear_scaling=linear_scaling,
-            log_scale_target=log_scale_target,
-            n_train_records=n_train_records,
-        )
+        if model in ('cocal_only', 'basic_median_delta'):
+            model_path = create_dir_path_results(
+                base_path=path,
+                dataset=dataset,
+                features=features,
+                encoding=encoding,
+                scaling='none',
+                augmentation='none',
+                model=model,
+                test_size=test_size,
+                n_iter=n_iter,
+                cv=cv,
+                linear_scaling=0,
+                log_scale_target=0,
+                n_train_records=0,
+            )
+        else:
+            model_path = create_dir_path_results(
+                base_path=path,
+                dataset=dataset,
+                features=features,
+                encoding=encoding,
+                scaling=scaling,
+                augmentation=augmentation,
+                model=model,
+                test_size=test_size,
+                n_iter=n_iter,
+                cv=cv,
+                linear_scaling=linear_scaling,
+                log_scale_target=log_scale_target,
+                n_train_records=n_train_records,
+            )
 
         temp = []
 
@@ -373,23 +471,27 @@ def export_mae_boxplot(path, zone, dataset, features, encoding, scaling, augment
             train_mae = res[zone]["mae"]["train_score"]
             test_mae = res[zone]["mae"]["test_score"]
 
+            model_string = ' '.join([only_first_char_upper(sss) for sss in (model.replace('_', ' ').capitalize() if len(model) > 3 else model.upper()).replace("Cocal", "COCAL").split(' ')])
+
             temp.append(test_mae)
-            all_data.append({"Model": model.replace('_', ' ').capitalize() if len(model) > 3 else model.upper(), "Dataset": "Train", "MAE": train_mae})
-            all_data.append({"Model": model.replace('_', ' ').capitalize() if len(model) > 3 else model.upper(), "Dataset": "Test", "MAE": test_mae})
+            all_data.append({"Model": model_string, "Dataset": "Train", "MAE": train_mae})
+            all_data.append({"Model": model_string, "Dataset": "Test", "MAE": test_mae})
 
         model_values[model] = temp
 
     holm, mann = perform_mannwhitneyu_holm_bonferroni(model_values, alternative='less')
     marked_models = {}
     for model in models:
-        marked_models[model.replace('_', ' ').capitalize() if len(model) > 3 else model.upper()] = False
+        model_string = ' '.join([only_first_char_upper(sss) for sss in (model.replace('_', ' ').capitalize() if len(model) > 3 else model.upper()).replace("Cocal", "COCAL").split(' ')])
+
+        marked_models[model_string] = False
         if holm[model]:
-            marked_models[model.replace('_', ' ').capitalize() if len(model) > 3 else model.upper()] = True
+            marked_models[model_string] = True
         else:
             temp = mann[model]
             for key in temp:
                 if temp[key]:
-                    marked_models[model.replace('_', ' ').capitalize() if len(model) > 3 else model.upper()] = True
+                    marked_models[model_string] = True
                     break
 
     df = pd.DataFrame(all_data)
@@ -519,15 +621,15 @@ def main():
     seed_indexes = list(range(1, 30 + 1))
     #models = ["cocal_only", "basic_median_delta", "linear", "elasticnet", "decision_tree", "symbolic_regression", "svr", "random_forest", "bagging", "gradient_boosting", "adaboost", "mlp"]
     #models = ["cocal_only", "basic_median_delta", "linear", "elasticnet", "decision_tree", "symbolic_regression"]
-    models = ["symbolic_regression", "svr", "random_forest", "bagging", "gradient_boosting", "adaboost", "mlp"]
+    models = ["elasticnet", "svr", "random_forest", "bagging", "gradient_boosting", "adaboost", "mlp"]
 
     #print_basic_scores_with_cap(None, None, None, path=path, dataset=dataset, test_dataset=None, features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, models=models, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes)
 
-    #export_mae_boxplot(path=path, zone='sincrotrone', dataset=dataset, features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, models=models, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes, dataset_split_palette=dataset_split_palette, dpi=800, PLOT_ARGS=PLOT_ARGS)
+    export_mae_boxplot(path=path, zone='sincrotrone', dataset=dataset, features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, models=models, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes, dataset_split_palette=dataset_split_palette, dpi=800, PLOT_ARGS=PLOT_ARGS)
     #collect_mae_lineplot_data(path=path, dataset=dataset, features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, model='gradient_boosting', test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_record_list=[400, 800, 1200, 1600, 2000, 0], seed_indexes=seed_indexes, dataset_split_palette=dataset_split_palette, dpi=500, PLOT_ARGS=PLOT_ARGS)
 
-    print_formula_sr(path=path, dataset=dataset, features=features, selected_features=selected_features, encoding=encoding, scaling=scaling, augmentation=augmentation, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling,
-                     log_scale_target=log_scale_target, n_train_records=n_train_records, seed_index=12)
+    #print_formula_sr(path=path, dataset=dataset, features=features, selected_features=selected_features, encoding=encoding, scaling=scaling, augmentation=augmentation, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling,
+    #                 log_scale_target=log_scale_target, n_train_records=n_train_records, seed_index=12)
 
 
 if __name__ == '__main__':
