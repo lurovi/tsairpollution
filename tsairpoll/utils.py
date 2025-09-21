@@ -72,7 +72,7 @@ def concat(s1: str, s2: str, sep: str = '') -> str:
     return s1 + sep + s2
 
 
-def multiple_concat(s: list[str], sep: str = '') -> str:
+def multiple_concat(s: list, sep: str = '') -> str:
     res: str = ''
     for i in range(len(s)):
         ss: str = s[i]

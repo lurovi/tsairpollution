@@ -8,18 +8,19 @@ def quick():
     #merge_arpa_csv_files('data/raw/arpa/pm10_volontari_2022_2023_2024/', 'data/raw/arpa/pm10_volontari_2022_2023_2024/arpa.csv')
     #merge_cocal_csv_files('data/raw/cocal/pm10_volontari_2022_2023_2024/', 'data/raw/cocal/pm10_volontari_2022_2023_2024/cocal.csv')
     df_merged, timestamps = integrate_arpa_cocal(
-        'data/raw/arpa/elenco_centraline_trieste.csv',
-        'data/raw/arpa/2024/pm10/carpineto/arpa.csv',
-        'data/raw/cocal/2024/carpineto/cocal.csv',
-        station_name="Trieste - via Carpineto",
+        'data_pre/raw/arpa/elenco_centraline_trieste.csv',
+        'data_pre/raw/arpa/pm10_volontari_2022_2023_2024/arpa.csv',
+        'data_pre/raw/cocal/pm10_volontari_2022_2023_2024/cocal.csv',
+        station_name="Trieste - P.zza Volontari Giuliani",
         parameter_name="Particelle sospese PM10",
         max_distance=100,
         device_type='dynamic',
         use_delta_as_target=False
     )
-    formatted_file_path = "data/formatted/carpineto.csv"  # Update with actual path
+    dataset_name = "volontari"
+    formatted_file_path = f"data_pre/formatted/{dataset_name}.csv"  # Update with actual path
     save_csv_data(df_merged, formatted_file_path)
-    save_csv_data(timestamps, "data/formatted/carpineto_timestamps.csv")
+    save_csv_data(timestamps, f"data_pre/formatted/{dataset_name}_timestamps.csv")
 
     # df = load_data('data/formatted/volontari.csv')
     # train_df, train_timestamp, test_df, test_timestamp = split_data_from_path('data/formatted/volontari.csv', 'data/formatted/volontari_timestamps.csv', 0.2, 42)

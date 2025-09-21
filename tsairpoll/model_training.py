@@ -1,8 +1,10 @@
 from pysr import PySRRegressor
+#from pygpg.sk import GPGRegressor
+#from pyGPGOMEA import GPGOMEARegressor as GPG
 import numpy as np
 import pandas as pd
-from category_encoders import CountEncoder
-from lightgbm import LGBMRegressor
+#from category_encoders import CountEncoder
+#from lightgbm import LGBMRegressor
 from sklearn.base import BaseEstimator, RegressorMixin, clone
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, OneHotEncoder
@@ -13,12 +15,12 @@ from sklearn.linear_model import LinearRegression, SGDRegressor, ElasticNetCV, G
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.neural_network import MLPRegressor
 import random
-import smogn
-from ImbalancedLearningRegression import adasyn
+#import smogn
+#from ImbalancedLearningRegression import adasyn
 from sklearn.svm import SVR
 
 from sklearn.tree import DecisionTreeRegressor
-from xgboost import XGBRegressor
+#from xgboost import XGBRegressor
 
 from tsairpoll.data_loader import split_data
 from tsairpoll.utils import compute_linear_scaling
@@ -211,82 +213,82 @@ class RareTargetAugmenter(BaseEstimator):
         return X_aug, y_aug
 
 
-class SmognAugmenter(BaseEstimator):
-    def __init__(self, smogn_params=None, random_state=None):
-        """
-        Initializes the SmognAugmenter.
+# class SmognAugmenter(BaseEstimator):
+#     def __init__(self, smogn_params=None, random_state=None):
+#         """
+#         Initializes the SmognAugmenter.
 
-        Parameters:
-        - y_col: Name of the target column.
-        - smogn_params: Dictionary of parameters to pass to smogn.smoter.
-        """
-        self.random_state = random_state
-        self.y_col = 'target'
-        self.smogn_params = smogn_params if smogn_params is not None else {}
+#         Parameters:
+#         - y_col: Name of the target column.
+#         - smogn_params: Dictionary of parameters to pass to smogn.smoter.
+#         """
+#         self.random_state = random_state
+#         self.y_col = 'target'
+#         self.smogn_params = smogn_params if smogn_params is not None else {}
 
-    def fit(self, X, y):
-        return self
+#     def fit(self, X, y):
+#         return self
 
-    def transform(self, X, y):
-        rng = np.random.default_rng(self.random_state)
+#     def transform(self, X, y):
+#         rng = np.random.default_rng(self.random_state)
 
-        # Combine X and y into a single DataFrame
-        df = X.copy()
+#         # Combine X and y into a single DataFrame
+#         df = X.copy()
 
-        df[self.y_col] = y
+#         df[self.y_col] = y
 
-        # Apply SMOGN
-        df_smogn = smogn.smoter(data=df.reset_index(drop=True), y=self.y_col, **self.smogn_params)
+#         # Apply SMOGN
+#         df_smogn = smogn.smoter(data=df.reset_index(drop=True), y=self.y_col, **self.smogn_params)
 
-        # Separate features and target
-        y_aug = df_smogn[self.y_col].values
-        X_aug = df_smogn.drop(columns=[self.y_col]).reset_index(drop=True)
+#         # Separate features and target
+#         y_aug = df_smogn[self.y_col].values
+#         X_aug = df_smogn.drop(columns=[self.y_col]).reset_index(drop=True)
 
-        # Shuffle the final result
-        indices = rng.permutation(len(y_aug))
-        X_aug = X_aug.iloc[indices].reset_index(drop=True)
-        y_aug = y_aug[indices]
+#         # Shuffle the final result
+#         indices = rng.permutation(len(y_aug))
+#         X_aug = X_aug.iloc[indices].reset_index(drop=True)
+#         y_aug = y_aug[indices]
 
-        return X_aug, y_aug
+#         return X_aug, y_aug
 
 
-class AdasynAugmenter(BaseEstimator):
-    def __init__(self, adasyn_params=None, random_state=None):
-        """
-        Initializes the AdasynAugmenter.
+# class AdasynAugmenter(BaseEstimator):
+#     def __init__(self, adasyn_params=None, random_state=None):
+#         """
+#         Initializes the AdasynAugmenter.
 
-        Parameters:
-        - y_col: Name of the target column.
-        - adasyn_params: Dictionary of parameters to pass to adasyn.
-        """
-        self.random_state = random_state
-        self.y_col = 'target'
-        self.adasyn_params = adasyn_params if adasyn_params is not None else {}
+#         Parameters:
+#         - y_col: Name of the target column.
+#         - adasyn_params: Dictionary of parameters to pass to adasyn.
+#         """
+#         self.random_state = random_state
+#         self.y_col = 'target'
+#         self.adasyn_params = adasyn_params if adasyn_params is not None else {}
 
-    def fit(self, X, y):
-        return self
+#     def fit(self, X, y):
+#         return self
 
-    def transform(self, X, y):
-        rng = np.random.default_rng(self.random_state)
+#     def transform(self, X, y):
+#         rng = np.random.default_rng(self.random_state)
 
-        # Combine X and y into a single DataFrame
-        df = X.copy()
+#         # Combine X and y into a single DataFrame
+#         df = X.copy()
 
-        df[self.y_col] = y
+#         df[self.y_col] = y
 
-        # Apply ADASYN
-        df_adasyn = adasyn(data=df.reset_index(drop=True), y=self.y_col, **self.adasyn_params)
+#         # Apply ADASYN
+#         df_adasyn = adasyn(data=df.reset_index(drop=True), y=self.y_col, **self.adasyn_params)
 
-        # Separate features and target
-        y_aug = df_adasyn[self.y_col].values
-        X_aug = df_adasyn.drop(columns=[self.y_col]).reset_index(drop=True)
+#         # Separate features and target
+#         y_aug = df_adasyn[self.y_col].values
+#         X_aug = df_adasyn.drop(columns=[self.y_col]).reset_index(drop=True)
 
-        # Shuffle the final result
-        indices = rng.permutation(len(y_aug))
-        X_aug = X_aug.iloc[indices].reset_index(drop=True)
-        y_aug = y_aug[indices]
+#         # Shuffle the final result
+#         indices = rng.permutation(len(y_aug))
+#         X_aug = X_aug.iloc[indices].reset_index(drop=True)
+#         y_aug = y_aug[indices]
 
-        return X_aug, y_aug
+#         return X_aug, y_aug
 
 
 def preprocess_and_train(df, timestamps, selected_features, encoding_type, scaling_strategy, augmentation_mode, model_name, test_size, n_iter, cv, seed, linear_scaling, log_scale_target, n_train_records, verbose=False):
@@ -294,6 +296,13 @@ def preprocess_and_train(df, timestamps, selected_features, encoding_type, scali
         raise ValueError('n_train_records must be >= 0')
     if not isinstance(n_train_records, int):
         raise ValueError('n_train_records must be an integer')
+
+    if model_name in ('cocal_only', 'basic_median_delta'):
+        encoding_type = 'onehot'
+        scaling_strategy = 'none'
+        augmentation_mode = 'none'
+        log_scale_target = 0
+        n_train_records = 0
 
     random.seed(seed)
     np.random.seed(seed)
@@ -326,12 +335,12 @@ def preprocess_and_train(df, timestamps, selected_features, encoding_type, scali
     X_test = test_df.iloc[:, :-1]
     y_test = test_df[target].to_numpy()
 
-    y_train = np.where(y_train == 0.0, 0.00000001, y_train)
+    #y_train = np.where(y_train == 0.0, 0.00000001, y_train)
 
     if encoding_type == "onehot":
         cat_transformer = OneHotEncoder(handle_unknown='ignore')
-    elif encoding_type == "frequency":
-        cat_transformer = CountEncoder(drop_invariant=True, normalize=True, handle_unknown=0, handle_missing='error')
+    #elif encoding_type == "frequency":
+    #    cat_transformer = CountEncoder(drop_invariant=True, normalize=True, handle_unknown=0, handle_missing='error')
     else:
         raise ValueError("Invalid encoding type. Choose 'onehot' or 'frequency'.")
 
@@ -360,31 +369,31 @@ def preprocess_and_train(df, timestamps, selected_features, encoding_type, scali
             y_noise_std=float(simple_aug_params[4]),
             random_state=seed
         )
-    elif augmentation_mode.startswith('smogn'):
-        smogn_aug_params = augmentation_mode.split('_')
-        smogn_params = {
-            'rel_thres': float(smogn_aug_params[1]),
-            'k': int(smogn_aug_params[2]),
-            'pert': float(smogn_aug_params[3]),
-            'samp_method': str(smogn_aug_params[4]), # "balance" or "extreme"
-            'rel_xtrm_type': str(smogn_aug_params[5]), # "high", "low", or "both"
-            'rel_method': 'auto',
-            'seed': seed,
-            'verbose': False
-        }
-        augmenter = SmognAugmenter(smogn_params=smogn_params, random_state=seed)
-    elif augmentation_mode.startswith('adasyn'):
-        adasyn_aug_params = augmentation_mode.split('_')
-        adasyn_params = {
-            'rel_thres': float(adasyn_aug_params[1]),
-            'k': int(adasyn_aug_params[2]),
-            'samp_method': str(adasyn_aug_params[3]), # "balance" or "extreme"
-            'rel_xtrm_type': str(adasyn_aug_params[4]), # "high", "low", or "both"
-            'rel_method': 'auto',
-            #'seed': seed,
-            #'verbose': False
-        }
-        augmenter = AdasynAugmenter(adasyn_params=adasyn_params, random_state=seed)
+    # elif augmentation_mode.startswith('smogn'):
+    #     smogn_aug_params = augmentation_mode.split('_')
+    #     smogn_params = {
+    #         'rel_thres': float(smogn_aug_params[1]),
+    #         'k': int(smogn_aug_params[2]),
+    #         'pert': float(smogn_aug_params[3]),
+    #         'samp_method': str(smogn_aug_params[4]), # "balance" or "extreme"
+    #         'rel_xtrm_type': str(smogn_aug_params[5]), # "high", "low", or "both"
+    #         'rel_method': 'auto',
+    #         'seed': seed,
+    #         'verbose': False
+    #     }
+    #     augmenter = SmognAugmenter(smogn_params=smogn_params, random_state=seed)
+    # elif augmentation_mode.startswith('adasyn'):
+    #     adasyn_aug_params = augmentation_mode.split('_')
+    #     adasyn_params = {
+    #         'rel_thres': float(adasyn_aug_params[1]),
+    #         'k': int(adasyn_aug_params[2]),
+    #         'samp_method': str(adasyn_aug_params[3]), # "balance" or "extreme"
+    #         'rel_xtrm_type': str(adasyn_aug_params[4]), # "high", "low", or "both"
+    #         'rel_method': 'auto',
+    #         #'seed': seed,
+    #         #'verbose': False
+    #     }
+    #     augmenter = AdasynAugmenter(adasyn_params=adasyn_params, random_state=seed)
     elif augmentation_mode == "none":
         augmenter = DummyAugmenter(random_state=seed)
     else:
@@ -402,14 +411,87 @@ def preprocess_and_train(df, timestamps, selected_features, encoding_type, scali
         "elasticnet": ElasticNetCV(random_state=seed),
         "random_forest": RandomForestRegressor(random_state=seed),
         "gradient_boosting": GradientBoostingRegressor(random_state=seed),
-        "lightgbm": LGBMRegressor(random_state=seed),
+        #"lightgbm": LGBMRegressor(random_state=seed),
         "bagging": BaggingRegressor(random_state=seed),
         "adaboost": AdaBoostRegressor(random_state=seed),
         "knn": KNeighborsRegressor(),
         "mlp": MLPRegressor(random_state=seed),
         "decision_tree": DecisionTreeRegressor(random_state=seed),
         "svr": SVR(),
-        "symbolic_regression": PySRRegressor(random_state=seed, parallelism='serial', deterministic=True, progress=False, verbosity=0),
+        # "GP-GOMEA": GPGRegressor(
+        #     t=-1,  # time limit,
+        #     g=-1,  # generations
+        #     e=300000,  # fitness evaluations
+        #     d=5,  # maximum tree depth
+        #     finetune_max_evals=300,  # 10,000 evaluations limit for fine-tuning
+        #     pop=256,
+        #     bs=256,
+        #     tour=4,
+        #     fset='+,-,*,/',
+        #     ff='ac',
+        #     finetune=True,  # whether to fine-tune the coefficients after the search
+        #     disable_ims=True,
+        #     no_univ_exc_leaves_fos=False,
+        #     rci=0.0,
+        #     cmp=0.0,
+        #     nolink=False,
+        #     feat_sel=False,
+        #     no_large_fos=True,
+        #     random_state=seed,  # for reproducibility
+        #     verbose=True,  # print progress
+        # ),
+        # "GP-GOMEA": GPG(
+        #     time=-1,
+        #     generations=1000,
+        #     evaluations=-1,
+        #     popsize=1000,
+        #     functions='+_*_-_p/',
+        #     tournament=5,
+        #     prob='symbreg', multiobj=False, linearscaling=False,
+        #     erc=True, classweights=False,
+        #     gomea=True, # gomfos='',
+        #     #subcross=0.5, submut=0.5, reproduction=0.0,
+        #     #sblibtype=False, sbrdo=0.0, sbagx=0.0,
+        #     unifdepthvar=True, elitism=1,
+        #     ims=False, syntuniqinit=1000,
+        #     initmaxtreeheight=2, inittype=False,
+        #     maxtreeheight=10, maxsize=40,
+        #     validation=False,
+        #     coeffmut='0.5_0.5_0.5_10', # False
+        #     #gomcoeffmutstrat=False,
+        #     batchsize=False,
+        #     seed=seed, parallel=1, caching=False,
+        #     silent=True, logtofile=False
+        # ),
+        # "symbolic_regression": PySRRegressor(
+        #     random_state=seed,
+        #     parallelism='serial',
+        #     deterministic=True,
+        #     progress=False,
+        #     verbosity=0
+        # ),
+        "symbolic_regression": PySRRegressor(
+            niterations=1000,
+            maxdepth=10,#9,
+            maxsize=30,#25,
+            binary_operators=["+", "-", "*", "/", '^'],
+            unary_operators=['square', 'abs', 'neg'],
+            constraints={'^': (1, 1), 'square': 10},
+            complexity_of_operators={'+': 1, '-': 1, '*': 1, '/': 1, '^': 2, 'abs': 1, 'neg': 1, 'square': 2},
+            populations=10,
+            population_size=1000,#100,
+            model_selection="accuracy",
+            tournament_selection_n=4,
+            crossover_probability=0.3,
+            ncycles_per_iteration=10,
+            topn=1,
+            parsimony=0.0,
+            random_state=seed,
+            verbosity=0,
+            deterministic=True,
+            parallelism="serial",
+            progress=False,
+        ),
     }
 
     if model_name not in models:
@@ -466,18 +548,18 @@ def preprocess_and_train(df, timestamps, selected_features, encoding_type, scali
             "regressor__validation_fraction": [0.1, 0.2, 0.3],
             "regressor__n_iter_no_change": [10, 20, 30],
         },
-        "lightgbm": {
-            "regressor__boosting_type": ["gbdt", "dart", "rf"],
-            "regressor__max_depth": [3, 6, 9, 12, 15],
-            "regressor__learning_rate": [1e-4, 1e-3, 1e-2, 1e-1],
-            "regressor__n_estimators": [10, 20, 50, 100, 150, 200],
-            "regressor__num_leaves": [10, 20, 30, 50, 100],
-            "regressor__reg_alpha": [0.0, 0.1, 0.3, 0.7],
-            "regressor__reg_lambda": [0.0, 0.1, 0.3, 0.7],
-            "regressor__importance_type": ["split", "gain"],
-            "regressor__min_data_in_leaf": [20, 50, 100, 200, 300, 500],
-            "regressor__max_bin": [10, 20, 40, 60, 80, 255],
-        },
+        # "lightgbm": {
+        #     "regressor__boosting_type": ["gbdt", "dart", "rf"],
+        #     "regressor__max_depth": [3, 6, 9, 12, 15],
+        #     "regressor__learning_rate": [1e-4, 1e-3, 1e-2, 1e-1],
+        #     "regressor__n_estimators": [10, 20, 50, 100, 150, 200],
+        #     "regressor__num_leaves": [10, 20, 30, 50, 100],
+        #     "regressor__reg_alpha": [0.0, 0.1, 0.3, 0.7],
+        #     "regressor__reg_lambda": [0.0, 0.1, 0.3, 0.7],
+        #     "regressor__importance_type": ["split", "gain"],
+        #     "regressor__min_data_in_leaf": [20, 50, 100, 200, 300, 500],
+        #     "regressor__max_bin": [10, 20, 40, 60, 80, 255],
+        # },
         "bagging": {
             "regressor__n_estimators": [10, 20, 50, 100, 150, 200],
             "regressor__oob_score": [True, False],
@@ -520,25 +602,32 @@ def preprocess_and_train(df, timestamps, selected_features, encoding_type, scali
             "regressor__shrinking": [True, False],
             "regressor__max_iter": [200, 400, 600, -1]
         },
-        "symbolic_regression": {
-            "regressor__maxsize": [30],
-            "regressor__maxdepth": [15],
-            "regressor__populations": [1],
-            "regressor__population_size": [100],
-            "regressor__niterations": [100],
-            "regressor__binary_operators": [['+', '-', '*', '/'], ['+', '-', '*', '/', '^'], ['+', '-', '*', '/', 'max', 'min'], ['+', '-', '*', '/', '^', 'max', 'min']],
-            "regressor__unary_operators": [['neg', 'square'], ['square', 'sqrt'], ['square', 'log'], ['neg', 'square', 'sqrt'], ['neg', 'square', 'sqrt', 'log']],
-            "regressor__parsimony": [0.0],
-            "regressor__complexity_of_operators": [{'+': 1, '-': 1, '*': 1, '/': 1, '^': 2, 'max': 1, 'min': 1, 'neg': 1, 'square': 1, 'sqrt': 2, 'log': 3}],
-            "regressor__constraints": [{'^': (-1, 5), 'sqrt': 5, 'log': 5, 'square': 10}],
-            "regressor__ncycles_per_iteration": [5],
-            "regressor__tournament_selection_n": [4],
-            "regressor__batching": [False],
-            "regressor__model_selection": ['accuracy'],
-            "regressor__topn": [1],
-            "regressor__fast_cycle": [True],
-            "regressor__crossover_probability": [0.5],
-        }
+        "symbolic_regression": {},
+        # "symbolic_regression": {
+        #     "regressor__maxsize": [30],
+        #     "regressor__maxdepth": [15],
+        #     "regressor__populations": [1],
+        #     "regressor__population_size": [100],
+        #     "regressor__niterations": [100],
+        #     "regressor__binary_operators": [['+', '-', '*', '/'], ['+', '-', '*', '/', '^'], ['+', '-', '*', '/', 'max', 'min'], ['+', '-', '*', '/', '^', 'max', 'min']],
+        #     "regressor__unary_operators": [['neg', 'square'], ['square', 'sqrt'], ['square', 'log'], ['neg', 'square', 'sqrt'], ['neg', 'square', 'sqrt', 'log']],
+        #     "regressor__parsimony": [0.0],
+        #     "regressor__complexity_of_operators": [{'+': 1, '-': 1, '*': 1, '/': 1, '^': 2, 'max': 1, 'min': 1, 'neg': 1, 'square': 1, 'sqrt': 2, 'log': 3}],
+        #     "regressor__constraints": [{'^': (-1, 5), 'sqrt': 5, 'log': 5, 'square': 10}],
+        #     "regressor__ncycles_per_iteration": [5],
+        #     "regressor__tournament_selection_n": [4],
+        #     "regressor__batching": [False],
+        #     "regressor__model_selection": ['accuracy'],
+        #     "regressor__topn": [1],
+        #     "regressor__fast_cycle": [True],
+        #     "regressor__crossover_probability": [0.5],
+        # },
+        #"GP-GOMEA": {
+        #    "regressor__no_univ_exc_leaves_fos": [True, False],
+        #    "regressor__cmp": [0.0, 0.1],
+        #    "regressor__rci": [0.0, 0.1],
+        #}
+        #"GP-GOMEA": {},
     }
 
     param_grids = {k: {k1.replace('regressor__', 'pipeline__regressor__'): param_grids_0[k][k1] for k1 in param_grids_0[k]} for k in param_grids_0}

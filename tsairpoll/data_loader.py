@@ -177,6 +177,12 @@ def load_cocal_data(file_path, ref_lat, ref_lon, max_distance, device_type):
     df["timestamp"] = df["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S")
     df["timestamp"] = pd.to_datetime(df["timestamp"], format="%Y-%m-%d %H:%M:%S")
 
+    # Compute dew point
+    df["dew_point"] = compute_dew_point(df["BM_T"], df["BM_H"])
+    cols = df.columns.tolist()  # Get current column order
+    cols.insert(cols.index("timestamp") + 1, cols.pop(cols.index("dew_point")))  # Move "dew_point"
+    df = df[cols]  # Apply new order
+
     # Aggregating by mean
     #df = df.groupby(['timestamp', 'device'], as_index=False).mean(numeric_only=True)
 
@@ -203,12 +209,9 @@ def load_cocal_data(file_path, ref_lat, ref_lon, max_distance, device_type):
     # Add a new column "device_type"
     df["device_type"] = df["device"].apply(lambda x: "static" if x == "CAMO004" else "dynamic")
     df = df.drop(columns=["device"])
-    # Compute dew point
-    df["dew_point"] = compute_dew_point(df["BM_T_MEAN"], df["BM_H_MEAN"])
     # Order columns
     cols = df.columns.tolist()  # Get current column order
     cols.insert(cols.index("timestamp") + 1, cols.pop(cols.index("device_type")))  # Move "device_type"
-    cols.insert(cols.index("device_type") + 1, cols.pop(cols.index("dew_point")))    # Move "dew_point"
     df = df[cols]  # Apply new order
 
     if device_type.strip().lower() == 'static':
@@ -293,9 +296,6 @@ def integrate_arpa_cocal(stations_file, arpa_file, cocal_file, station_name, par
     if 'ARPA' not in list(df.columns)[-1].upper():
         raise ValueError(f'The last column here must be the PM from ARPA.')
     df = df.drop(columns=['PM25_MEAN', 'PM25_MIN', 'PM25_MAX']) if 'PM10' in list(df.columns)[-1].upper() else df.drop(columns=['PM10_MEAN', 'PM10_MIN', 'PM10_MAX'])
-
-    # Drop lat and lon
-    df = df.drop(columns=['LAT_MAX', 'LAT_MIN', 'LAT_MEAN', 'LON_MAX', 'LON_MIN', 'LON_MEAN'])
 
     # Derive time-related attributes
     df = derive_time_attributes(df)

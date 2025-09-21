@@ -193,6 +193,10 @@ def main():
             result_dict['sympy'] = str(search.best_estimator_.pipeline['regressor'].sympy())
             result_dict['latex_table'] = str(search.best_estimator_.pipeline['regressor'].latex_table())
 
+        if model == 'GP-GOMEA':
+            result_dict['sympy'] = str(search.best_estimator_.pipeline['regressor'].get_model().replace("p/", "/").replace("plog", "log"))
+            #result_dict['sympy'] = str(search.best_estimator_.pipeline['regressor'].model)
+
         with open(os.path.join(final_path, f'result{seed_index}.json'), 'w') as f:
             json.dump(result_dict, f, indent=4)
 

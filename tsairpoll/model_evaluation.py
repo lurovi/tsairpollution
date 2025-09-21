@@ -1,4 +1,9 @@
-from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error, root_mean_squared_error
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+import numpy as np
+
+
+def root_mean_squared_error(y_true, y_pred):
+    return np.sqrt(mean_squared_error(y_true, y_pred))
 
 
 def evaluate_model(pipeline, X_train, X_test, y_train, y_test, metric="r2"):

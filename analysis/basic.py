@@ -35,6 +35,14 @@ from tsairpoll.stat_test import perform_mannwhitneyu_holm_bonferroni
 # SIMPLE ANALYSIS
 # ======================================================================================
 
+def mean_std_pm10_cocal_arpa(datasets):
+    for dataset in datasets:
+        df = load_data(f'../data/formatted/{dataset}.csv')
+        cocal = df['PM10_MEAN'].values
+        arpa = df['PM10_ARPA'].values
+        print(dataset)
+        print("COCAL ", np.mean(cocal), " ", np.std(cocal))
+        print("ARPA ", np.mean(arpa), " ", np.std(arpa))
 
 def print_formula_sr(path, dataset, features, selected_features, encoding, scaling, augmentation, test_size, n_iter, cv, linear_scaling, log_scale_target, n_train_records, seed_index):
     df = load_data(f'../data/formatted/{dataset}.csv')
@@ -388,7 +396,7 @@ def create_lineplot_single_repetition(path, dataset, features, selected_features
     search = load_pkl(os.path.join(s, f'search{seed_index}.pkl'))
 
 
-def my_callback_function_that_actually_draws_boxplot(plt, data, marked_models, dataset_split_palette, x_label="Model", y_label="MAE", title=None):
+def my_callback_function_that_actually_draws_boxplot(plt, data, marked_models, dataset_split_palette, also_train_box, x_label="Model", y_label="MAE", title=None):
     figsize = (10, 6)
     fig, ax = plt.subplots(figsize=figsize, layout='constrained')
 
@@ -402,12 +410,12 @@ def my_callback_function_that_actually_draws_boxplot(plt, data, marked_models, d
         ax.set_title(title)
 
     # Draw boxplot
-    sns.boxplot(data=data, x="Model", y="MAE", hue="Dataset", palette=dataset_split_palette, legend=True,
+    sns.boxplot(data=data, x="Model", y="MAE", hue="Dataset", palette=dataset_split_palette, legend=also_train_box,
                 log_scale=None, fliersize=0.0, showfliers=False, ax=ax)
 
     # Annotate stars for marked models
     ymin, _ = ax.get_ylim()
-    star_y = ymin + (0.03 * (ax.get_ylim()[1] - ymin))  # a bit below ymin
+    star_y = ymin + (0.025 * (ax.get_ylim()[1] - ymin))  # a bit below ymin
 
     xtick_labels = [t.get_text() for t in ax.get_xticklabels()]
     for xpos, model_label in enumerate(xtick_labels):
@@ -434,16 +442,32 @@ def export_mae_boxplot(path, zone, dataset, features, encoding, scaling, augment
                 base_path=path,
                 dataset=dataset,
                 features=features,
-                encoding=encoding,
+                encoding='onehot',
                 scaling='none',
                 augmentation='none',
                 model=model,
                 test_size=test_size,
                 n_iter=n_iter,
                 cv=cv,
-                linear_scaling=0,
+                linear_scaling=linear_scaling,
                 log_scale_target=0,
                 n_train_records=0,
+            )
+        elif model in ('GP-GOMEA'):
+            model_path = create_dir_path_results(
+                base_path=path,
+                dataset=dataset,
+                features=features,
+                encoding=encoding,
+                scaling=scaling,
+                augmentation=augmentation,
+                model=model,
+                test_size=test_size,
+                n_iter=n_iter,
+                cv=cv,
+                linear_scaling=1,
+                log_scale_target=log_scale_target,
+                n_train_records=n_train_records,
             )
         else:
             model_path = create_dir_path_results(
@@ -474,7 +498,8 @@ def export_mae_boxplot(path, zone, dataset, features, encoding, scaling, augment
             model_string = ' '.join([only_first_char_upper(sss) for sss in (model.replace('_', ' ').capitalize() if len(model) > 3 else model.upper()).replace("Cocal", "COCAL").split(' ')])
 
             temp.append(test_mae)
-            all_data.append({"Model": model_string, "Dataset": "Train", "MAE": train_mae})
+            if zone == "volontari":
+                all_data.append({"Model": model_string, "Dataset": "Train", "MAE": train_mae})
             all_data.append({"Model": model_string, "Dataset": "Test", "MAE": test_mae})
 
         model_values[model] = temp
@@ -497,7 +522,7 @@ def export_mae_boxplot(path, zone, dataset, features, encoding, scaling, augment
     df = pd.DataFrame(all_data)
 
     plot = fastplot.plot(None, None, mode='callback',
-                         callback=lambda plt: my_callback_function_that_actually_draws_boxplot(plt, df, marked_models, dataset_split_palette),
+                         callback=lambda plt: my_callback_function_that_actually_draws_boxplot(plt, df, marked_models, dataset_split_palette, zone == "volontari", title=zone.capitalize()),
                          style='latex', **PLOT_ARGS)
 
     plot.savefig('boxplot.pdf', dpi=dpi)
@@ -620,11 +645,11 @@ def main():
     n_train_records = 0
     seed_indexes = list(range(1, 30 + 1))
     #models = ["cocal_only", "basic_median_delta", "linear", "elasticnet", "decision_tree", "symbolic_regression", "svr", "random_forest", "bagging", "gradient_boosting", "adaboost", "mlp"]
-    #models = ["cocal_only", "basic_median_delta", "linear", "elasticnet", "decision_tree", "symbolic_regression"]
-    models = ["elasticnet", "svr", "random_forest", "bagging", "gradient_boosting", "adaboost", "mlp"]
+    models = ["cocal_only", "basic_median_delta", "linear", "elasticnet", "decision_tree", "symbolic_regression"]
+    #models = ["elasticnet", "svr", "random_forest", "bagging", "gradient_boosting", "adaboost", "mlp"]
 
     #print_basic_scores_with_cap(None, None, None, path=path, dataset=dataset, test_dataset=None, features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, models=models, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes)
-
+    #mean_std_pm10_cocal_arpa(['volontari', 'carpineto', 'sincrotrone'])
     export_mae_boxplot(path=path, zone='sincrotrone', dataset=dataset, features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, models=models, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes, dataset_split_palette=dataset_split_palette, dpi=800, PLOT_ARGS=PLOT_ARGS)
     #collect_mae_lineplot_data(path=path, dataset=dataset, features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, model='gradient_boosting', test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_record_list=[400, 800, 1200, 1600, 2000, 0], seed_indexes=seed_indexes, dataset_split_palette=dataset_split_palette, dpi=500, PLOT_ARGS=PLOT_ARGS)
 
