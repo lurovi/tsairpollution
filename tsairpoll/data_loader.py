@@ -205,6 +205,7 @@ def load_cocal_data(file_path, ref_lat, ref_lon, max_distance, device_type):
     df = df.reset_index(drop=True)
 
     df.rename(columns={"TIMESTAMP_": "timestamp", "DEVICE_": "device"}, inplace=True)
+    df.rename(columns={'DEW_POINT_MEAN': 'dew_point'}, inplace=True)
 
     # Add a new column "device_type"
     df["device_type"] = df["device"].apply(lambda x: "static" if x == "CAMO004" else "dynamic")

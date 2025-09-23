@@ -91,11 +91,12 @@ def apply_aggregated_model_from_repetitions(path, model, dataset_name, features,
         models.append(search)
 
     # Load dataset
-    df = load_data(f'../data_pre/formatted/{dataset_name}.csv')
-    timestamps = load_data(f'../data_pre/formatted/{dataset_name}_timestamps.csv')
+    df = load_data(f'../data/formatted/{dataset_name}.csv')
+    timestamps = load_data(f'../data/formatted/{dataset_name}_timestamps.csv')
 
     target = df.columns[-1]
-    df.rename(columns={'DEW_POINT_MEAN': 'dew_point'}, inplace=True)
+    if "DEW_POINT_MEAN" in df.columns:
+        df.rename(columns={'DEW_POINT_MEAN': 'dew_point'}, inplace=True)
 
     true_values = df[target].to_numpy()
     cocal_values = df['PM10_MEAN'].to_numpy()
@@ -459,60 +460,68 @@ def my_callback_function_that_actually_draws_map_plot(plt, data, model_name):
     # Compute vmin and vmax from all datasets and all values, including cocal, true, and aggregated
     vmin = float('inf')
     vmax = float('-inf')
-    for dataset, (timestamps, coordinates, cocal_values, true_values, aggregated_values, q1, q3) in data.items():
+    for _, (timestamps, coordinates, cocal_values, true_values, aggregated_values, q1, q3) in data.items():
+        if (cocal_values is None) or (true_values is None) or (aggregated_values is None):
+            continue
+        if len(cocal_values) == 0 and len(true_values) == 0 and len(aggregated_values) == 0:
+            continue
         all_values = np.concatenate([cocal_values, true_values, aggregated_values])
-        vmin = min(vmin, np.min(all_values))
-        vmax = max(vmax, np.max(all_values))
+        if all_values.size:
+            vmin = min(vmin, float(np.min(all_values)))
+            vmax = max(vmax, float(np.max(all_values)))
+
     if vmin == float('inf') or vmax == float('-inf'):
         print("No data available to plot. Exiting map drawing.")
         return
-    target = "PM10_ARPA"
-    title = f"{model_name}"
-    plt.title(title)
-    plt.xlabel("Longitude")
-    plt.ylabel("Latitude")
 
-    # Grid layout
-    fig = plt.figure(figsize=(10, 10))
+    target = "PM10 Concentration (µg/m³)"
+
+    # Figure and 3x4 grid (3 map columns + 1 colorbar column)
+    fig = plt.figure(figsize=(15, 15), layout="constrained")
     gs = fig.add_gridspec(
-        3, 4, width_ratios=[20, 1], height_ratios=[1, 1], wspace=0.02, hspace=0.02
+        nrows=3,
+        ncols=4,
+        width_ratios=[1, 1, 1, 0.05],
+        height_ratios=[1, 1, 1],
+        wspace=0.02,
+        hspace=0.02,
     )
 
+    # Colorbar axis spans all rows in the 4th column
+    cax = fig.add_subplot(gs[:, 3])
+
+    # Column headers on the first row only
+    col_labels = ["COCAL values", "Predicted values", "True values"]
+
+    # Iterate rows (datasets)
     for i, (dataset, (timestamps, coordinates, cocal_values, true_values, aggregated_values, q1, q3)) in enumerate(data.items()):
-        if len(cocal_values) == 0 or len(true_values) == 0 or len(aggregated_values) == 0:
-            print("No data available for plotting. Exiting map drawing.")
-            return
+        if coordinates is None or len(coordinates) == 0:
+            print(f"No points to plot for dataset {dataset}. Skipping row.")
+            continue
+        if any(len(arr) == 0 for arr in [cocal_values, true_values, aggregated_values]):
+            print(f"Missing values for dataset {dataset}. Skipping row.")
+            continue
+        if not (len(cocal_values) == len(true_values) == len(aggregated_values) == len(coordinates)):
+            print(f"Mismatch between number of values and number of coordinates for dataset {dataset}. Skipping row.")
+            continue
 
-        if len(coordinates) == 0:
-            print("No points to plot. Exiting map drawing.")
-            return
-
+        # Axes for this row
         ax1 = fig.add_subplot(gs[i, 0])
         ax2 = fig.add_subplot(gs[i, 1])
         ax3 = fig.add_subplot(gs[i, 2])
-        cax = fig.add_axes([0.92, 0.2, 0.02, 0.6])
-        y_true = true_values
-        y_pred = aggregated_values
-        y_cocal = cocal_values
-        if len(y_true) != len(coordinates) or len(y_pred) != len(coordinates) or len(y_cocal) != len(coordinates):
-            print("Mismatch between number of values and number of coordinates. Exiting map drawing.")
-            return
-        
+
         # Build GeoDataFrame for projection
         gdf = gpd.GeoDataFrame(
             geometry=[Point(lon, lat) for lon, lat in coordinates], crs="EPSG:4326"
         ).to_crs(epsg=3857)
 
-        # Compute global extent (with padding)
+        # Compute row extent (with padding) so all three subplots in the row share the same view
         xmin, ymin, xmax, ymax = gdf.total_bounds
         dx, dy = (xmax - xmin) * 0.05, (ymax - ymin) * 0.05  # 5% padding
         extent = (xmin - dx, xmax + dx, ymin - dy, ymax + dy)
 
-
-
-        # Helper to set up map
-        def setup_ax(ax, values, label):
-            # Plot actual points
+        # Helper to set up a single map axis
+        def setup_ax(ax, values, label, dataset_name):
             gdf.plot(
                 ax=ax,
                 column=values,
@@ -525,58 +534,70 @@ def my_callback_function_that_actually_draws_map_plot(plt, data, model_name):
                 edgecolor="k",
             )
 
-            # Optional: draw outline polygon
-            if not gdf.empty and len(gdf) > 2:
-                hull = gdf.union_all().convex_hull
-                gpd.GeoSeries([hull], crs=gdf.crs).boundary.plot(
-                    ax=ax, color="black", linewidth=0.6
-                )
+            # Optional: draw outline polygon (if available)
+            try:
+                if not gdf.empty and len(gdf) > 2:
+                    # union_all is available in newer geopandas; fallback to unary_union otherwise
+                    hull_candidate = getattr(gdf, "union_all", None)
+                    if callable(hull_candidate):
+                        hull = gdf.union_all().convex_hull
+                    else:
+                        hull = gdf.unary_union.convex_hull
+                    gpd.GeoSeries([hull], crs=gdf.crs).boundary.plot(
+                        ax=ax, color="black", linewidth=0.6
+                    )
+            except Exception:
+                # If hull computation fails, skip silently
+                pass
 
             # Add basemap and lock extent
-            ctx.add_basemap(
-                ax, crs=gdf.crs.to_string(), source=ctx.providers.OpenStreetMap.Mapnik # type: ignore
-            )
+            try:
+                ctx.add_basemap(ax, crs=gdf.crs.to_string(), source=ctx.providers.OpenStreetMap.Mapnik)  # type: ignore
+            except Exception:
+                # Basemap is optional; continue if tiles fail to load
+                pass
             ax.set_xlim(extent[0], extent[1])
             ax.set_ylim(extent[2], extent[3])
 
             # Cosmetics
-            ax.set_title(f"{label}")
-            ax.set_xlabel("Longitude")
-            ax.set_ylabel("Latitude")
+            if dataset_name == "sincrotrone":
+                ax.set_xlabel("Longitude")
+            if label == "COCAL values":
+                ax.set_ylabel("Latitude")
+            else:
+                ax.tick_params(labelleft=False)
 
+            # Column titles for the top row only
+            if i == 0:
+                ax.set_title(label)
+
+            # Add row label to the last column only (right side)
             if label == "True values":
                 axtwin = ax.twinx()
-                axtwin.set_ylabel(dataset.capitalize(), rotation=270, labelpad=14)
+                axtwin.set_ylabel(dataset_name.capitalize(), rotation=270, labelpad=14)
                 axtwin.yaxis.set_label_position("right")
-                # Hide left labels on the twin axis; show ticks on the right only
                 axtwin.tick_params(labelleft=False)
-                # Remove y-ticks on the twin axis instead of setting empty ticklabels (avoids matplotlib warnings)
                 axtwin.set_yticks([])
                 axtwin.yaxis.tick_right()
-            
-
 
             ax.grid(True, axis="both", which="major", color="gray", linestyle="--", linewidth=0.5)
-            ax.tick_params(
-                axis="both",
-                which="both",
-                reset=False,
-                bottom=False,
-                top=False,
-                left=False,
-                right=False,
-            )
+            ax.tick_params(axis="both", which="both", reset=False, bottom=False, top=False, left=False, right=False)
 
-        # True and Predicted plots
-        setup_ax(ax1, y_true, "True values")
-        setup_ax(ax2, y_pred, "Predicted values")
+        # Draw the three map types for this dataset row
+        setup_ax(ax1, cocal_values, col_labels[0], dataset)
+        setup_ax(ax2, aggregated_values, col_labels[1], dataset)
+        setup_ax(ax3, true_values, col_labels[2], dataset)
 
-        # Shared colorbar
-        sm = plt.cm.ScalarMappable(cmap="cividis", norm=plt.Normalize(vmin=vmin, vmax=vmax))
-        sm._A = []
-        cbar = fig.colorbar(sm, cax=cax, orientation="vertical")
-        cbar.set_label(target)
-        return fig
+    # Shared colorbar across all plots
+    sm = plt.cm.ScalarMappable(cmap="cividis", norm=plt.Normalize(vmin=vmin, vmax=vmax))
+    sm.set_array([])
+    cbar = fig.colorbar(sm, cax=cax, orientation="vertical")
+    cbar.set_label(target)
+
+    # Suptitle for the model name
+    fig.suptitle(f"{model_name}")
+
+    return fig
 
 
 def create_scatterplot_on_multiple_datasets_with_true_values_vs_predicted_values_from_aggregated_model(path, model, features, selected_features, encoding, scaling, augmentation, test_size, n_iter, cv, linear_scaling, log_scale_target, n_train_records, seed_indexes, PLOT_ARGS):
@@ -997,7 +1018,10 @@ def main():
 
     #create_lineplot_on_dataset_with_arpa_vs_cocal_vs_aggregated_model_across_time(path=path, model='symbolic_regression', features=features, selected_features=selected_features, encoding=encoding, scaling=scaling, augmentation=augmentation, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes, PLOT_ARGS=PLOT_ARGS)
 
-    create_scatterplot_on_multiple_datasets_with_true_values_vs_predicted_values_from_aggregated_model(path=path, model='symbolic_regression', features=features, selected_features=selected_features, encoding=encoding, scaling=scaling, augmentation=augmentation, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes, PLOT_ARGS=PLOT_ARGS)
+    #create_scatterplot_on_multiple_datasets_with_true_values_vs_predicted_values_from_aggregated_model(path=path, model='symbolic_regression', features=features, selected_features=selected_features, encoding=encoding, scaling=scaling, augmentation=augmentation, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes, PLOT_ARGS=PLOT_ARGS)
+
+    create_and_draw_map_plot(path=path, model='symbolic_regression', features=features, selected_features=selected_features, encoding=encoding, scaling=scaling, augmentation=augmentation, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes, PLOT_ARGS=PLOT_ARGS)
+
 
 if __name__ == '__main__':
     main()
