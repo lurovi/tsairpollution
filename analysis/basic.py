@@ -17,6 +17,8 @@ import random
 
 
 from sklearn.exceptions import ConvergenceWarning
+from sympy import simplify, latex
+from sympy.parsing.sympy_parser import parse_expr
 warnings.filterwarnings("ignore", category=SyntaxWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -143,6 +145,8 @@ def mean_std_pm10_cocal_arpa(datasets):
 def print_formula_sr(path, dataset, features, selected_features, encoding, scaling, augmentation, test_size, n_iter, cv, linear_scaling, log_scale_target, n_train_records, seed_index):
     df = load_data(f'../data/formatted/{dataset}.csv')
     timestamps = load_data(f'../data/formatted/{dataset}_timestamps.csv')
+    if "DEW_POINT_MEAN" in df.columns:
+        df.rename(columns={'DEW_POINT_MEAN': 'dew_point'}, inplace=True)
 
     with open('../random_seeds.txt', 'r') as f:
         # THE ACTUAL SEED TO BE USED IS LOCATED AT POSITION seed_index - 1 SINCE seed_index IS AN INDEX THAT STARTS FROM 1
@@ -196,7 +200,8 @@ def print_formula_sr(path, dataset, features, selected_features, encoding, scali
 
     preprocessor.fit(X_train, y_train)
     X_transformed = preprocessor.transform(X_train)
-    print(preprocessor.named_transformers_['cat'].get_feature_names_out())
+    feature_names = preprocessor.named_transformers_['cat'].get_feature_names_out()
+    print(feature_names)
 
     s = create_dir_path_results(
         base_path=path,
@@ -215,7 +220,9 @@ def print_formula_sr(path, dataset, features, selected_features, encoding, scali
     )
 
     search = load_pkl(os.path.join(s, f'search{seed_index}.pkl'))
-    print(search.best_estimator_.pipeline['regressor'].latex())
+    actual_formula = simplify(parse_expr(search.best_estimator_.pipeline['regressor'].sympy(), evaluate=True))
+    actual_formula = actual_formula.xreplace({n: round(float(n), 3) for n in actual_formula.atoms() if n.is_Float})
+    print(latex(actual_formula))
 
     with open(os.path.join(s, f'result{seed_index}.json'), 'r') as f:
         res = json.load(f)
@@ -1011,8 +1018,8 @@ def main():
     #export_mae_boxplot(path=path, title='Black-Box Methods', features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, models=models, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes, dataset_split_palette=dataset_split_palette, dpi=1200, PLOT_ARGS=PLOT_ARGS)
     #collect_mae_lineplot_data(path=path, dataset=dataset, features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, model='gradient_boosting', test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_record_list=[400, 800, 1200, 1600, 2000, 0], seed_indexes=seed_indexes, dataset_split_palette=dataset_split_palette, dpi=500, PLOT_ARGS=PLOT_ARGS)
 
-    #print_formula_sr(path=path, dataset=dataset, features=features, selected_features=selected_features, encoding=encoding, scaling=scaling, augmentation=augmentation, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling,
-    #                 log_scale_target=log_scale_target, n_train_records=n_train_records, seed_index=12)
+    print_formula_sr(path=path, dataset=dataset, features=features, selected_features=selected_features, encoding=encoding, scaling=scaling, augmentation=augmentation, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling,
+                     log_scale_target=log_scale_target, n_train_records=n_train_records, seed_index=1)
 
     #print_latex_like_table_with_all_metrics_and_datasets(path=path, features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, models=models, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes)
 
@@ -1020,7 +1027,7 @@ def main():
 
     #create_scatterplot_on_multiple_datasets_with_true_values_vs_predicted_values_from_aggregated_model(path=path, model='symbolic_regression', features=features, selected_features=selected_features, encoding=encoding, scaling=scaling, augmentation=augmentation, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes, PLOT_ARGS=PLOT_ARGS)
 
-    create_and_draw_map_plot(path=path, model='symbolic_regression', features=features, selected_features=selected_features, encoding=encoding, scaling=scaling, augmentation=augmentation, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes, PLOT_ARGS=PLOT_ARGS)
+    #create_and_draw_map_plot(path=path, model='symbolic_regression', features=features, selected_features=selected_features, encoding=encoding, scaling=scaling, augmentation=augmentation, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes, PLOT_ARGS=PLOT_ARGS)
 
 
 if __name__ == '__main__':
