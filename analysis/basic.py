@@ -7,6 +7,7 @@ import seaborn as sns
 from matplotlib import pyplot as plt
 import matplotlib.colorbar as colorbar
 import matplotlib.colors as mcolors
+from matplotlib.ticker import FuncFormatter
 
 import numpy as np
 import pandas as pd
@@ -37,6 +38,7 @@ from tsairpoll.stat_test import perform_mannwhitneyu_holm_bonferroni
 import geopandas as gpd
 from shapely.geometry import Point, MultiPoint
 import contextily as ctx  # for background tiles
+from pyproj import Transformer
 
 
 # ======================================================================================
@@ -202,6 +204,30 @@ def print_formula_sr(path, dataset, features, selected_features, encoding, scali
     X_transformed = preprocessor.transform(X_train)
     feature_names = preprocessor.named_transformers_['cat'].get_feature_names_out()
     print(feature_names)
+    for numerical_col in numerical_cols:
+        feature_names = np.append(feature_names, numerical_col)
+    print(feature_names)
+    # ['season_autumn' 'season_spring' 'season_summer' 'season_winter'
+    #  'time_of_day_afternoon' 'time_of_day_evening' 'time_of_day_morning'
+    #  'time_of_day_night' 'dew_point' 'NUM_MEASUREMENTS' 'BM_P_MEAN'
+    #  'GPS_KMH_MEAN' 'GPS_DIR_MEAN' 'GPS_ALT_MEAN' 'PM10_MEAN']
+    mapping_feature_alias = {
+        'season_autumn': r'\text{isAt}',
+        'season_spring': r'\text{isSp}',
+        'season_summer': r'\text{isSm}',
+        'season_winter': r'\text{isWn}',
+        'time_of_day_afternoon': r'\text{isAf}',
+        'time_of_day_evening': r'\text{isEv}',
+        'time_of_day_morning': r'\text{isMr}',
+        'time_of_day_night': r'\text{isNg}',
+        'dew_point': r'\texttt{DP}',
+        'NUM_MEASUREMENTS': r'\texttt{N}',
+        'BM_P_MEAN': r'\texttt{P}',
+        'GPS_KMH_MEAN': r'\texttt{KMH}',
+        'GPS_DIR_MEAN': r'\texttt{Dir}',
+        'GPS_ALT_MEAN': r'\texttt{Alt}',
+        'PM10_MEAN': r'\texttt{PM10}'
+    }
 
     s = create_dir_path_results(
         base_path=path,
@@ -220,16 +246,24 @@ def print_formula_sr(path, dataset, features, selected_features, encoding, scali
     )
 
     search = load_pkl(os.path.join(s, f'search{seed_index}.pkl'))
-    actual_formula = simplify(parse_expr(search.best_estimator_.pipeline['regressor'].sympy(), evaluate=True))
-    actual_formula = actual_formula.xreplace({n: round(float(n), 3) for n in actual_formula.atoms() if n.is_Float})
-    print(latex(actual_formula))
+    sympy_orig_formula = search.best_estimator_.pipeline['regressor'].sympy()
+    #actual_formula = simplify(parse_expr(search.best_estimator_.pipeline['regressor'].sympy(), evaluate=True))
+    #actual_formula = actual_formula.xreplace({n: round(float(n), 2) for n in actual_formula.atoms() if n.is_Float})
+    sympy_orig_formula = sympy_orig_formula.xreplace({n: round(float(n), 2) for n in sympy_orig_formula.atoms() if n.is_Float})
+    latex_orig_formula = latex(sympy_orig_formula)
+    print(latex_orig_formula)
+    print()
+    # replace feature names x_{i} with actual names from feature_names
+    for i, feature_name in enumerate(feature_names):
+        latex_orig_formula = latex_orig_formula.replace(f'x_{{{i}}}', mapping_feature_alias.get(feature_name, feature_name))
+    print(latex_orig_formula)
 
     with open(os.path.join(s, f'result{seed_index}.json'), 'r') as f:
         res = json.load(f)
 
-    print("Volontari Test MAE ", res['volontari']['mae']["test_score"])
-    print("Carpineto Test MAE ", res['carpineto']['mae']["test_score"])
-    print("Sincrotrone Test MAE ", res['sincrotrone']['mae']["test_score"])
+    print("Volontari Test MAE ", round(res['volontari']['mae']["test_score"], 2))
+    print("Carpineto Test MAE ", round(res['carpineto']['mae']["test_score"], 2))
+    print("Sincrotrone Test MAE ", round(res['sincrotrone']['mae']["test_score"], 2))
 
 
 
@@ -432,7 +466,7 @@ def print_latex_like_table_with_all_metrics_and_datasets(path, features, encodin
 # ======================================================================================
 
 def create_and_draw_map_plot(path, model, features, selected_features, encoding, scaling, augmentation, test_size, n_iter, cv, linear_scaling, log_scale_target, n_train_records, seed_indexes, PLOT_ARGS):
-    data = {dataset: None for dataset in ['volontari', 'carpineto', 'sincrotrone']}
+    data = {}
     datasets = ['volontari', 'carpineto', 'sincrotrone']
     for dataset in datasets:
         timestamps, coordinates, cocal_values, true_values, aggregated_values, q1, q3 = apply_aggregated_model_from_repetitions(
@@ -459,15 +493,15 @@ def create_and_draw_map_plot(path, model, features, selected_features, encoding,
     plot = fastplot.plot(None, None, mode='callback',
                          callback=lambda plt: my_callback_function_that_actually_draws_map_plot(plt, data, model_string),
                          style='latex', **PLOT_ARGS)
-    plot.savefig(f'map_plot.pdf', dpi=1200)
-    plot.savefig(f'map_plot.png', dpi=1200)
+    plot.savefig(f'map_plot_{model}.pdf', dpi=1200)
+    # plot.savefig(f'map_plot_{model}.png', dpi=1200)
 
 
 def my_callback_function_that_actually_draws_map_plot(plt, data, model_name):
     # Compute vmin and vmax from all datasets and all values, including cocal, true, and aggregated
     vmin = float('inf')
     vmax = float('-inf')
-    for _, (timestamps, coordinates, cocal_values, true_values, aggregated_values, q1, q3) in data.items():
+    for dataset, (timestamps, coordinates, cocal_values, true_values, aggregated_values, q1, q3) in data.items():
         if (cocal_values is None) or (true_values is None) or (aggregated_values is None):
             continue
         if len(cocal_values) == 0 and len(true_values) == 0 and len(aggregated_values) == 0:
@@ -482,26 +516,70 @@ def my_callback_function_that_actually_draws_map_plot(plt, data, model_name):
         return
 
     target = "PM10 Concentration (µg/m³)"
+    # Transformer to convert from Web Mercator (axes units) to lon/lat degrees for tick labels
+    transformer = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
+
+    # Precompute row extents and height ratios so all map columns have equal width
+    # while each row's height follows its geographic aspect (dy/dx).
+    ordered_items = list(data.items())
+    row_extents = []
+    height_ratios = []
+    for _, (timestamps, coordinates, cocal_values, true_values, aggregated_values, q1, q3) in ordered_items:
+        if coordinates is None or len(coordinates) == 0:
+            row_extents.append(None)
+            height_ratios.append(1.0)
+            continue
+        try:
+            gdf_tmp = gpd.GeoDataFrame(
+                geometry=[Point(lon, lat) for lon, lat in coordinates], crs="EPSG:4326"
+            ).to_crs(epsg=3857)
+            xmin, ymin, xmax, ymax = gdf_tmp.total_bounds
+            dx, dy = (xmax - xmin), (ymax - ymin)
+            if dx <= 0 or dy <= 0:
+                dx = dx if dx > 0 else 1.0
+                dy = dy if dy > 0 else 1.0
+            pad_x, pad_y = dx * 0.05, dy * 0.05
+            extent = (xmin - pad_x, xmax + pad_x, ymin - pad_y, ymax + pad_y)
+            row_extents.append(extent)
+            height_ratios.append(dy / dx)
+        except Exception:
+            row_extents.append(None)
+            height_ratios.append(1.0)
+
+    # Keep ratios positive; optional mild normalization to avoid extreme sizes
+    height_ratios = [hr if hr > 0 else 1.0 for hr in height_ratios]
 
     # Figure and 3x4 grid (3 map columns + 1 colorbar column)
-    fig = plt.figure(figsize=(15, 15), layout="constrained")
+    # Do NOT use constrained layout here because fastplot calls tight_layout() internally
+    # and switching layout engines after creating a colorbar raises a RuntimeError.
+    fig = plt.figure(figsize=(13, 8))
+    # Pre-set the layout engine to 'tight' to avoid engine switching after colorbar creation
+    try:
+        fig.set_layout_engine('tight')
+    except Exception:
+        # Fallback silently if running on an older Matplotlib without layout engines
+        pass
     gs = fig.add_gridspec(
         nrows=3,
-        ncols=4,
-        width_ratios=[1, 1, 1, 0.05],
-        height_ratios=[1, 1, 1],
-        wspace=0.02,
-        hspace=0.02,
+        ncols=5,
+        # 3 map columns, 1 spacer column, 1 colorbar column
+        width_ratios=[1, 1, 1, 0.06, 0.08],
+        height_ratios=height_ratios,
+        wspace=0.05,
+        hspace=0.0,
+        top=0.98,
+        bottom=0.04,
     )
 
-    # Colorbar axis spans all rows in the 4th column
-    cax = fig.add_subplot(gs[:, 3])
+    # Colorbar axis spans all rows in the last column
+    cax = fig.add_subplot(gs[:, 4])
 
-    # Column headers on the first row only
-    col_labels = ["COCAL values", "Predicted values", "True values"]
+    # Column labels for top-row headers (we'll draw them inside axes, not as titles)
+    col_labels = ["COCAL Values", f"{model_name} Values", "ARPA Values"]
+    rows_axes: list[tuple] = []
 
     # Iterate rows (datasets)
-    for i, (dataset, (timestamps, coordinates, cocal_values, true_values, aggregated_values, q1, q3)) in enumerate(data.items()):
+    for i, (dataset, (timestamps, coordinates, cocal_values, true_values, aggregated_values, q1, q3)) in enumerate(ordered_items):
         if coordinates is None or len(coordinates) == 0:
             print(f"No points to plot for dataset {dataset}. Skipping row.")
             continue
@@ -516,29 +594,36 @@ def my_callback_function_that_actually_draws_map_plot(plt, data, model_name):
         ax1 = fig.add_subplot(gs[i, 0])
         ax2 = fig.add_subplot(gs[i, 1])
         ax3 = fig.add_subplot(gs[i, 2])
+    # We'll manually manage layout later
 
         # Build GeoDataFrame for projection
         gdf = gpd.GeoDataFrame(
             geometry=[Point(lon, lat) for lon, lat in coordinates], crs="EPSG:4326"
         ).to_crs(epsg=3857)
 
-        # Compute row extent (with padding) so all three subplots in the row share the same view
-        xmin, ymin, xmax, ymax = gdf.total_bounds
-        dx, dy = (xmax - xmin) * 0.05, (ymax - ymin) * 0.05  # 5% padding
-        extent = (xmin - dx, xmax + dx, ymin - dy, ymax + dy)
+        # Use precomputed row extent (with padding) so all three subplots in the row share the same view
+        extent = row_extents[i]
+        if extent is None:
+            xmin, ymin, xmax, ymax = gdf.total_bounds
+            dx, dy = (xmax - xmin) * 0.05, (ymax - ymin) * 0.05
+            extent = (xmin - dx, xmax + dx, ymin - dy, ymax + dy)
 
         # Helper to set up a single map axis
         def setup_ax(ax, values, label, dataset_name):
-            gdf.plot(
+            # Plot lower values first and higher values last (on top)
+            gdf_vals = gdf.copy()
+            gdf_vals["__val"] = pd.Series(values, index=gdf_vals.index)
+            gdf_vals_sorted = gdf_vals.sort_values("__val", ascending=True)
+            gdf_vals_sorted.plot(
                 ax=ax,
-                column=values,
+                column="__val",
                 cmap="cividis",
-                markersize=30,
+                markersize=20,
                 vmin=vmin,
                 vmax=vmax,
                 legend=False,
                 alpha=0.7,
-                edgecolor="k",
+                #edgecolor="k",
             )
 
             # Optional: draw outline polygon (if available)
@@ -565,27 +650,42 @@ def my_callback_function_that_actually_draws_map_plot(plt, data, model_name):
                 pass
             ax.set_xlim(extent[0], extent[1])
             ax.set_ylim(extent[2], extent[3])
+            # Set equal aspect after limits to avoid warnings
+            ax.set_aspect('equal', adjustable='box')
+
+            # Format ticks to show lon/lat in degrees while the data are in EPSG:3857
+            x0 = float(np.mean(ax.get_xlim()))
+            y0 = float(np.mean(ax.get_ylim()))
+            ax.xaxis.set_major_formatter(FuncFormatter(lambda x, pos, y0=y0: f"{transformer.transform(x, y0)[0]:.2f}°"))
+            ax.yaxis.set_major_formatter(FuncFormatter(lambda y, pos, x0=x0: f"{transformer.transform(x0, y)[1]:.2f}°"))
 
             # Cosmetics
             if dataset_name == "sincrotrone":
                 ax.set_xlabel("Longitude")
-            if label == "COCAL values":
+            if label == "COCAL Values":
                 ax.set_ylabel("Latitude")
             else:
                 ax.tick_params(labelleft=False)
 
-            # Column titles for the top row only
+            # Add compact per-axes titles only on the top row
             if i == 0:
-                ax.set_title(label)
+                try:
+                    ax.set_title(label, pad=6)
+                except Exception:
+                    ax.set_title(label)
 
-            # Add row label to the last column only (right side)
-            if label == "True values":
-                axtwin = ax.twinx()
-                axtwin.set_ylabel(dataset_name.capitalize(), rotation=270, labelpad=14)
-                axtwin.yaxis.set_label_position("right")
-                axtwin.tick_params(labelleft=False)
-                axtwin.set_yticks([])
-                axtwin.yaxis.tick_right()
+            # Add row label to the last column only (right side) without affecting layout
+            if label == "ARPA Values":
+                txt = ax.text(
+                    1.01, 0.5, dataset_name.capitalize(),
+                    rotation=270, va='center', ha='left', transform=ax.transAxes,
+                    clip_on=False
+                )
+                # Exclude the label from tight layout calculations
+                try:
+                    txt.set_in_layout(False)
+                except Exception:
+                    pass
 
             ax.grid(True, axis="both", which="major", color="gray", linestyle="--", linewidth=0.5)
             ax.tick_params(axis="both", which="both", reset=False, bottom=False, top=False, left=False, right=False)
@@ -594,21 +694,54 @@ def my_callback_function_that_actually_draws_map_plot(plt, data, model_name):
         setup_ax(ax1, cocal_values, col_labels[0], dataset)
         setup_ax(ax2, aggregated_values, col_labels[1], dataset)
         setup_ax(ax3, true_values, col_labels[2], dataset)
+        rows_axes.append((ax1, ax2, ax3))
 
     # Shared colorbar across all plots
     sm = plt.cm.ScalarMappable(cmap="cividis", norm=plt.Normalize(vmin=vmin, vmax=vmax))
     sm.set_array([])
     cbar = fig.colorbar(sm, cax=cax, orientation="vertical")
-    cbar.set_label(target)
+    cbar.set_label(target, rotation=270, labelpad=11)
+    # Match colorbar height to the combined height of all rows
+    try:
+        cax.set_in_layout(False)
+    except Exception:
+        pass
+    try:
+        pos = cax.get_position(fig)
+        top_margin = 0.935
+        bottom_margin = 0.06
+        cax.set_position([pos.x0, bottom_margin, pos.width, top_margin - bottom_margin])
+    except Exception:
+        pass
 
-    # Suptitle for the model name
-    fig.suptitle(f"{model_name}")
+    # Manually position rows without vertical gaps based on height ratios
+    try:
+        top_margin = 0.98
+        bottom_margin = 0.04
+        total_h = top_margin - bottom_margin
+        sum_hr = sum(height_ratios) if height_ratios else 1.0
+        y_top = top_margin
+        for i, (ax1, ax2, ax3) in enumerate(rows_axes):
+            row_h = total_h * (height_ratios[i] / sum_hr)
+            y0 = y_top - row_h
+            # Keep current x/width from GridSpec, only override y/height
+            for ax in (ax1, ax2, ax3):
+                pos = ax.get_position(fig)
+                ax.set_position([pos.x0, y0, pos.width, row_h])
+                try:
+                    ax.set_in_layout(False)
+                except Exception:
+                    pass
+            # Headers handled via top-row axes titles; no extra texts here
+            y_top = y0
+    except Exception:
+        pass
 
     return fig
 
 
 def create_scatterplot_on_multiple_datasets_with_true_values_vs_predicted_values_from_aggregated_model(path, model, features, selected_features, encoding, scaling, augmentation, test_size, n_iter, cv, linear_scaling, log_scale_target, n_train_records, seed_indexes, PLOT_ARGS):
-    data = {dataset: None for dataset in ['volontari', 'carpineto', 'sincrotrone']}
+    data = {}
     datasets = ['volontari', 'carpineto', 'sincrotrone']
     for dataset in datasets:
         timestamps, coordinates, cocal_values, true_values, aggregated_values, q1, q3 = apply_aggregated_model_from_repetitions(
@@ -669,7 +802,7 @@ def my_callback_function_that_actually_draws_scatterplot_on_multiple_datasets_wi
 
 
 def create_lineplot_on_dataset_with_arpa_vs_cocal_vs_aggregated_model_across_time(path, model, features, selected_features, encoding, scaling, augmentation, test_size, n_iter, cv, linear_scaling, log_scale_target, n_train_records, seed_indexes, PLOT_ARGS):
-    data = {dataset: None for dataset in ['volontari', 'carpineto', 'sincrotrone']}
+    data = {}
     datasets = ['volontari', 'carpineto', 'sincrotrone']
 
     for dataset in datasets:
@@ -692,15 +825,17 @@ def create_lineplot_on_dataset_with_arpa_vs_cocal_vs_aggregated_model_across_tim
         )
         data[dataset] = (timestamps, cocal_values, true_values, aggregated_values, q1, q3)
 
+    model_string = ' '.join([only_first_char_upper(sss) for sss in (model.replace('_', ' ').capitalize() if len(model) > 3 else model.upper()).replace("Cocal", "COCAL").split(' ')])
+
     # fastplot
     plot = fastplot.plot(None, None, mode='callback',
-                         callback=lambda plt: my_callback_function_that_actually_draws_lineplot_on_dataset_with_arpa_vs_cocal_vs_aggregated_model_across_time(plt, data),
+                         callback=lambda plt: my_callback_function_that_actually_draws_lineplot_on_dataset_with_arpa_vs_cocal_vs_aggregated_model_across_time(plt, data, model_string),
                          style='latex', **PLOT_ARGS)
     plot.savefig(f'lineplot.pdf', dpi=1200)
     plot.savefig(f'lineplot.png', dpi=1200)
 
 
-def my_callback_function_that_actually_draws_lineplot_on_dataset_with_arpa_vs_cocal_vs_aggregated_model_across_time(plt, data):
+def my_callback_function_that_actually_draws_lineplot_on_dataset_with_arpa_vs_cocal_vs_aggregated_model_across_time(plt, data, model_string):
     figsize = (12, 12)
     fig, ax = plt.subplots(3, 1, figsize=figsize, layout="constrained", squeeze=False)
 
@@ -712,7 +847,7 @@ def my_callback_function_that_actually_draws_lineplot_on_dataset_with_arpa_vs_co
 
         ax[i, 0].plot(x, true_values, label="ARPA", color='#2E8B57', linestyle='-', linewidth=1.4, markersize=10)
         ax[i, 0].plot(x, cocal_values, label="COCAL", color='#D77A1D', linestyle='--', linewidth=1.4, markersize=10)
-        ax[i, 0].plot(x, aggregated_values, label="Aggregated Model", color='#625DF2', linestyle='-.', linewidth=1.4, markersize=10)
+        ax[i, 0].plot(x, aggregated_values, label=f"{model_string}", color='#625DF2', linestyle='-.', linewidth=1.4, markersize=10)
         ax[i, 0].fill_between(x, q1, q3, alpha=0.3, color='#625DF2')
 
         axtwin = ax[i, 0].twinx()
@@ -1011,15 +1146,15 @@ def main():
     seed_indexes = list(range(1, 30 + 1))
     models = ["cocal_only", "basic_median_delta", "linear", "elasticnet", "decision_tree", "symbolic_regression", "svr", "random_forest", "bagging", "gradient_boosting", "adaboost", "mlp"]
     #models = ["cocal_only", "basic_median_delta", "linear", "elasticnet", "decision_tree", "symbolic_regression"]
-    #models = ["elasticnet", "svr", "random_forest", "bagging", "gradient_boosting", "adaboost", "mlp"]
+    #models = ["elasticnet", "symbolic_regression", "svr", "random_forest", "bagging", "gradient_boosting", "adaboost", "mlp"]
 
     #print_basic_scores_with_cap(None, None, None, path=path, dataset=dataset, test_dataset=None, features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, models=models, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes)
     #mean_std_pm10_cocal_arpa(['volontari', 'carpineto', 'sincrotrone'])
-    #export_mae_boxplot(path=path, title='Black-Box Methods', features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, models=models, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes, dataset_split_palette=dataset_split_palette, dpi=1200, PLOT_ARGS=PLOT_ARGS)
+    #export_mae_boxplot(path=path, title='Glass-Box Methods', features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, models=models, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes, dataset_split_palette=dataset_split_palette, dpi=1200, PLOT_ARGS=PLOT_ARGS)
     #collect_mae_lineplot_data(path=path, dataset=dataset, features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, model='gradient_boosting', test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_record_list=[400, 800, 1200, 1600, 2000, 0], seed_indexes=seed_indexes, dataset_split_palette=dataset_split_palette, dpi=500, PLOT_ARGS=PLOT_ARGS)
 
     print_formula_sr(path=path, dataset=dataset, features=features, selected_features=selected_features, encoding=encoding, scaling=scaling, augmentation=augmentation, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling,
-                     log_scale_target=log_scale_target, n_train_records=n_train_records, seed_index=1)
+                     log_scale_target=log_scale_target, n_train_records=n_train_records, seed_index=10)
 
     #print_latex_like_table_with_all_metrics_and_datasets(path=path, features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, models=models, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes)
 
