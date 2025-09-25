@@ -138,8 +138,8 @@ def apply_aggregated_model_from_repetitions(path, model, dataset_name, features,
 def mean_std_pm10_cocal_arpa(datasets):
     for dataset in datasets:
         df = load_data(f'../data/formatted/{dataset}.csv')
-        cocal = df['PM10_MEAN'].values
-        arpa = df['PM10_ARPA'].values
+        cocal = np.asarray(df['PM10_MEAN'].values)
+        arpa = np.asarray(df['PM10_ARPA'].values)
         print(dataset)
         print("COCAL ", np.mean(cocal), " ", np.std(cocal))
         print("ARPA ", np.mean(arpa), " ", np.std(arpa))
