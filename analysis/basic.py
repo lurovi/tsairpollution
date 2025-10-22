@@ -1,6 +1,7 @@
 import random
 import warnings
 import zlib
+from PIL import Image
 
 import fastplot
 import seaborn as sns
@@ -465,6 +466,52 @@ def print_latex_like_table_with_all_metrics_and_datasets(path, features, encodin
 # PLOTS
 # ======================================================================================
 
+
+def combine_images_row(image_paths, titles, output_path=None, size=(400, 400)):
+    """
+    Combine three images side-by-side with titles above each one.
+
+    Parameters
+    ----------
+    image_paths : list of str or list of PIL.Image
+        List containing 3 image file paths or PIL Image objects.
+    titles : list of str
+        List of 3 strings, one for each image title.
+    output_path : str, optional
+        If provided, saves the combined image to this path instead of showing it.
+    size : tuple of int, optional
+        Desired (width, height) for each image after resizing.
+    """
+    assert len(image_paths) == 3, "Please provide exactly three images."
+    assert len(titles) == 3, "Please provide exactly three titles."
+
+    # Load and resize images
+    images = []
+    for im in image_paths:
+        if isinstance(im, Image.Image):
+            img = im.copy()
+        else:
+            img = Image.open(im)
+        img = img.resize(size)
+        images.append(img)
+
+    # Plot in a single row
+    fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+    for ax, img, title in zip(axes, images, titles):
+        ax.imshow(img)
+        ax.set_title(title, fontsize=12)
+        ax.axis("off")
+
+    plt.tight_layout()
+
+    # Save or show
+    if output_path:
+        plt.savefig(output_path, bbox_inches="tight", dpi=300)
+        plt.close(fig)
+    else:
+        plt.show()
+
+
 def create_and_draw_map_plot(path, model, features, selected_features, encoding, scaling, augmentation, test_size, n_iter, cv, linear_scaling, log_scale_target, n_train_records, seed_indexes, PLOT_ARGS):
     data = {}
     datasets = ['volontari', 'carpineto', 'sincrotrone']
@@ -871,7 +918,7 @@ def my_callback_function_that_actually_draws_lineplot_on_dataset_with_arpa_vs_co
         ax[i, 0].legend()
 
 
-def my_callback_function_that_actually_draws_boxplot(plt, data, marked_models, dataset_split_palette, x_label="Model", y_label="MAE", title=None):
+def my_callback_function_that_actually_draws_boxplot(plt, data, marked_models, holm_marked_models, dataset_split_palette, x_label="Model", y_label="MAE", title: str | None=None, same_scale=False, log_scale=False):
     figsize = (10, 10)
     
     fig, ax = plt.subplots(3, 1, figsize=figsize, layout='constrained', squeeze=False)
@@ -881,6 +928,16 @@ def my_callback_function_that_actually_draws_boxplot(plt, data, marked_models, d
         if zone == 'sincrotrone':
             ax[i, 0].set_xlabel(x_label)
         ax[i, 0].set_ylabel(y_label)
+
+
+        if same_scale and title is not None:
+            if 'Glass' in title:
+                ax[i, 0].set_ylim(4.2, 16.2)
+            else:
+                ax[i, 0].set_ylim(0.6, 18)
+
+        if log_scale:
+            ax[i, 0].set_yscale('log')
 
         axtwin = ax[i, 0].twinx()
         axtwin.set_ylabel(zone.capitalize(), rotation=270, labelpad=14)
@@ -929,19 +986,24 @@ def my_callback_function_that_actually_draws_boxplot(plt, data, marked_models, d
             for key in marked_models[zone]:
                 # Check if this label corresponds to this key
                 if model_label == key:
-                    if marked_models[zone][key]:
+                    if holm_marked_models[zone] == key:
                         ax[i, 0].text(
-                            pos, star_y, r"\textbf{*}",
-                            ha='center', va='top', fontsize=14, color='black', clip_on=False
+                            pos, star_y + 0.2, r"\textbf{$\bigstar$}",
+                            ha='center', va='top', fontsize=5, color='black', clip_on=False
                         )
-                    break
+                        break
+                    else:
+                        if marked_models[zone][key]:
+                            ax[i, 0].text(
+                                pos, star_y, r"\textbf{*}",
+                                ha='center', va='top', fontsize=14, color='black', clip_on=False
+                            )
+                            break
 
-        
-        
 
 def export_mae_boxplot(path, features, encoding, scaling, augmentation, models, test_size, n_iter, cv,
                         linear_scaling, log_scale_target, n_train_records, seed_indexes,
-                        dataset_split_palette, title, dpi, PLOT_ARGS):
+                        dataset_split_palette, title, same_scale, log_scale, dpi, PLOT_ARGS):
     datasets = ["volontari", "carpineto", "sincrotrone"]
     all_data = {zone: [] for zone in datasets}
     model_values = {zone: {} for zone in datasets}
@@ -1000,9 +1062,20 @@ def export_mae_boxplot(path, features, encoding, scaling, augmentation, models, 
             model_values[zone][model] = temp
 
     marked_models = {}
+    holm_marked_models = {}
 
     for zone in datasets:
         holm, mann = perform_mannwhitneyu_holm_bonferroni(model_values[zone], alternative='less')
+        print(holm)
+        print('---')
+        print(mann)
+        print('---')
+        holm_marked_models[zone] = None
+        for key in holm:
+            if holm[key]:
+                key_model_string = ' '.join([only_first_char_upper(sss) for sss in (key.replace('_', ' ').capitalize() if len(key) > 3 else key.upper()).replace("Cocal", "COCAL").split(' ')])
+                holm_marked_models[zone] = key_model_string
+                break
         marked_models[zone] = {}
         for model in models:
             model_string = ' '.join([only_first_char_upper(sss) for sss in (model.replace('_', ' ').capitalize() if len(model) > 3 else model.upper()).replace("Cocal", "COCAL").split(' ')])
@@ -1022,7 +1095,7 @@ def export_mae_boxplot(path, features, encoding, scaling, augmentation, models, 
         all_df[zone] = pd.DataFrame(all_data[zone])
 
     plot = fastplot.plot(None, None, mode='callback',
-                         callback=lambda plt: my_callback_function_that_actually_draws_boxplot(plt, all_df, marked_models, dataset_split_palette, title=title),
+                         callback=lambda plt: my_callback_function_that_actually_draws_boxplot(plt, all_df, marked_models, holm_marked_models, dataset_split_palette, title=title, same_scale=same_scale, log_scale=log_scale),
                          style='latex', **PLOT_ARGS)
 
     plot.savefig('boxplot.pdf', dpi=dpi)
@@ -1122,6 +1195,7 @@ def main():
                         \usepackage{amsmath}
                         \usepackage{libertine}
                         \usepackage{xspace}
+                        \usepackage{MnSymbol}
                         '''
 
     PLOT_ARGS = {'rcParams': {'text.latex.preamble': preamble, 'pdf.fonttype': 42, 'ps.fonttype': 42}}
@@ -1145,12 +1219,12 @@ def main():
     n_train_records = 0
     seed_indexes = list(range(1, 30 + 1))
     models = ["cocal_only", "basic_median_delta", "linear", "elasticnet", "decision_tree", "symbolic_regression", "svr", "random_forest", "bagging", "gradient_boosting", "adaboost", "mlp"]
-    #models = ["cocal_only", "basic_median_delta", "linear", "elasticnet", "decision_tree", "symbolic_regression"]
+    #models = ["cocal_only", "basic_median_delta", "linear", "elasticnet", "symbolic_regression", "decision_tree"]
     #models = ["elasticnet", "symbolic_regression", "svr", "random_forest", "bagging", "gradient_boosting", "adaboost", "mlp"]
 
     #print_basic_scores_with_cap(None, None, None, path=path, dataset=dataset, test_dataset=None, features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, models=models, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes)
     #mean_std_pm10_cocal_arpa(['volontari', 'carpineto', 'sincrotrone'])
-    #export_mae_boxplot(path=path, title='Glass-Box Methods', features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, models=models, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes, dataset_split_palette=dataset_split_palette, dpi=1200, PLOT_ARGS=PLOT_ARGS)
+    #export_mae_boxplot(path=path, title='Black-Box Methods', same_scale=True, log_scale=False,features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, models=models, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes, dataset_split_palette=dataset_split_palette, dpi=1200, PLOT_ARGS=PLOT_ARGS)
     #collect_mae_lineplot_data(path=path, dataset=dataset, features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, model='gradient_boosting', test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_record_list=[400, 800, 1200, 1600, 2000, 0], seed_indexes=seed_indexes, dataset_split_palette=dataset_split_palette, dpi=500, PLOT_ARGS=PLOT_ARGS)
 
     print_formula_sr(path=path, dataset=dataset, features=features, selected_features=selected_features, encoding=encoding, scaling=scaling, augmentation=augmentation, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling,
@@ -1163,6 +1237,13 @@ def main():
     #create_scatterplot_on_multiple_datasets_with_true_values_vs_predicted_values_from_aggregated_model(path=path, model='symbolic_regression', features=features, selected_features=selected_features, encoding=encoding, scaling=scaling, augmentation=augmentation, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes, PLOT_ARGS=PLOT_ARGS)
 
     #create_and_draw_map_plot(path=path, model='symbolic_regression', features=features, selected_features=selected_features, encoding=encoding, scaling=scaling, augmentation=augmentation, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes, PLOT_ARGS=PLOT_ARGS)
+    
+    #combine_images_row(
+    #  ["volontari.png", "carpineto.png", "sincrotrone.png"],
+    #   ["Volontari", "Carpineto", "Sincrotrone"],
+    #   output_path="combined_maps.png"
+    #)
+
 
 
 if __name__ == '__main__':

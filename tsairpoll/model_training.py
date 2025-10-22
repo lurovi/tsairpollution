@@ -76,6 +76,65 @@ class BasicMedianDeltaRegressor(BaseEstimator, RegressorMixin):
         return X[:, -1] + self.offset_
 
 
+class GroupedMedianDeltaRegressor(BaseEstimator, RegressorMixin):
+    """
+    A regressor that predicts y = last_column(X) + group_specific_median_delta,
+    where groups are defined by one-hot season and hourly range combinations.
+    """
+
+    def __init__(self, season_cols, hour_cols):
+        """
+        Parameters
+        ----------
+        season_cols : list of int
+            Column indices of the one-hot encoded season variables.
+        hour_cols : list of int
+            Column indices of the one-hot encoded hourly range variables.
+        """
+        self.season_cols = season_cols
+        self.hour_cols = hour_cols
+
+    def fit(self, X, y):
+        X = np.asarray(X)
+        y = np.asarray(y)
+
+        last_col = X[:, -1]
+        delta = y - last_col
+
+        # Identify active season and hour index for each row
+        season_idx = np.argmax(X[:, self.season_cols], axis=1)
+        hour_idx = np.argmax(X[:, self.hour_cols], axis=1)
+
+        # Compute median delta for each (season, hour) pair
+        self.offsets_ = {}
+        for s in range(len(self.season_cols)):
+            for h in range(len(self.hour_cols)):
+                mask = (season_idx == s) & (hour_idx == h)
+                if np.any(mask):
+                    self.offsets_[(s, h)] = np.median(delta[mask])
+                else:
+                    # Default to global median if group is empty
+                    self.offsets_[(s, h)] = np.median(delta)
+
+        # Store global fallback
+        self.global_offset_ = np.median(delta)
+        return self
+
+    def predict(self, X):
+        X = np.asarray(X)
+
+        last_col = X[:, -1]
+        season_idx = np.argmax(X[:, self.season_cols], axis=1)
+        hour_idx = np.argmax(X[:, self.hour_cols], axis=1)
+
+        preds = np.empty_like(last_col, dtype=float)
+        for i in range(X.shape[0]):
+            key = (season_idx[i], hour_idx[i])
+            offset = self.offsets_.get(key, self.global_offset_)
+            preds[i] = last_col[i] + offset
+        return preds
+
+
 class DataAugmenterRegressor(BaseEstimator, RegressorMixin):
     def __init__(self, augmenter, pipeline, linear_scaling, log_scale_target):
         self.augmenter = augmenter
@@ -104,16 +163,16 @@ class DataAugmenterRegressor(BaseEstimator, RegressorMixin):
                 slope, intercept = compute_linear_scaling(np.log1p(y_aug), p)
             else:
                 slope, intercept = compute_linear_scaling(y_aug, p)
-            self.slope_ = np.core.umath.clip(slope, -1e+15, 1e+15)
-            self.intercept_ = np.core.umath.clip(intercept, -1e+15, 1e+15)
+            self.slope_ = np.core.umath.clip(slope, -1e+15, 1e+15) # type: ignore
+            self.intercept_ = np.core.umath.clip(intercept, -1e+15, 1e+15) # type: ignore
 
         return self
 
     def predict(self, X):
         if self.log_scale_target:
-            return np.expm1(np.core.umath.clip(self.slope_ * self.pipeline.predict(X), -1e+15, 1e+15) + self.intercept_)
+            return np.expm1(np.core.umath.clip(self.slope_ * self.pipeline.predict(X), -1e+15, 1e+15) + self.intercept_)  # type: ignore
         else:
-            return np.core.umath.clip(self.slope_ * self.pipeline.predict(X), -1e+15, 1e+15) + self.intercept_
+            return np.core.umath.clip(self.slope_ * self.pipeline.predict(X), -1e+15, 1e+15) + self.intercept_ # type: ignore
 
     def get_params(self, deep=True):
         out = super().get_params(deep=deep)
@@ -403,7 +462,7 @@ def preprocess_and_train(df, timestamps, selected_features, encoding_type, scali
     models = {
         "cocal_only": CocalOnlyRegressor(),
         "basic_median": BasicMedianRegressor(),
-        "basic_median_delta": BasicMedianDeltaRegressor(),
+        "basic_median_delta": GroupedMedianDeltaRegressor(season_cols=[0, 1, 2, 3], hour_cols=[4, 5, 6, 7]),
         "linear": LinearRegression(),
         "gamma": GammaRegressor(),
         "poisson": PoissonRegressor(),
