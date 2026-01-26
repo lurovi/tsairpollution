@@ -15,6 +15,7 @@ import pandas as pd
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 
+import scipy.stats as stats
 import random
 
 
@@ -136,14 +137,43 @@ def apply_aggregated_model_from_repetitions(path, model, dataset_name, features,
 # SIMPLE ANALYSIS
 # ======================================================================================
 
-def mean_std_pm10_cocal_arpa(datasets):
+def mean_std_pm10_cocal_arpa(path, datasets, model, features, selected_features, encoding, scaling, augmentation, test_size, n_iter, cv, linear_scaling, log_scale_target, n_train_records, seed_indexes):
     for dataset in datasets:
+        timestamps, coordinates, cocal_values, true_values, aggregated_values, q1, q3 = apply_aggregated_model_from_repetitions(
+            path=path,
+            model=model,
+            dataset_name=dataset,
+            features=features,
+            selected_features=selected_features,
+            encoding=encoding,
+            scaling=scaling,
+            augmentation=augmentation,
+            test_size=test_size,
+            n_iter=n_iter,
+            cv=cv,
+            linear_scaling=linear_scaling,
+            log_scale_target=log_scale_target,
+            n_train_records=n_train_records,
+            seed_indexes=seed_indexes
+        )
         df = load_data(f'../data/formatted/{dataset}.csv')
         cocal = np.asarray(df['PM10_MEAN'].values)
         arpa = np.asarray(df['PM10_ARPA'].values)
         print(dataset)
-        print("COCAL ", np.mean(cocal), " ", np.std(cocal))
-        print("ARPA ", np.mean(arpa), " ", np.std(arpa))
+        print("COCAL ", round(np.mean(cocal), 4), " ", round(np.std(cocal), 4))
+        print("ARPA ", round(np.mean(arpa), 4), " ", round(np.std(arpa), 4))
+        print(f"MODEL {model} ", round(np.mean(aggregated_values), 4), " ", round(np.std(aggregated_values), 4))
+        # perform wilcoxon signed rank test between COCAL and ARPA
+        stat, p_value = stats.wilcoxon(cocal, arpa, alternative='two-sided')
+        print("Wilcoxon signed-rank test between COCAL and ARPA: stat=", stat, ", p-value=", p_value)
+        # perform wilcoxon signed rank test between ARPA and MODEL
+        stat, p_value = stats.wilcoxon(arpa, aggregated_values, alternative='two-sided')
+        print("Wilcoxon signed-rank test between ARPA and MODEL: stat=", stat, ", p-value=", p_value)
+        # perform wilcoxon signed rank test between COCAL and MODEL
+        stat, p_value = stats.wilcoxon(cocal, aggregated_values, alternative='two-sided')
+        print("Wilcoxon signed-rank test between COCAL and MODEL: stat=", stat, ", p-value=", p_value)
+        # ======================================================================================
+
 
 def print_formula_sr(path, dataset, features, selected_features, encoding, scaling, augmentation, test_size, n_iter, cv, linear_scaling, log_scale_target, n_train_records, seed_index):
     df = load_data(f'../data/formatted/{dataset}.csv')
@@ -935,6 +965,13 @@ def my_callback_function_that_actually_draws_boxplot(plt, data, marked_models, h
                 ax[i, 0].set_ylim(4.2, 16.2)
             else:
                 ax[i, 0].set_ylim(0.6, 18)
+        else:
+            if title is not None and 'Glass' in title and i == 2:
+                ax[i, 0].set_ylim(4, 16.3)
+            if title is not None and 'Black' in title and i == 0:
+                ax[i, 0].set_ylim(0.2, 8.3)
+            if title is not None and 'Black' in title and i == 1:
+                ax[i, 0].set_ylim(4.8, 7.3)
 
         if log_scale:
             ax[i, 0].set_yscale('log')
@@ -963,6 +1000,11 @@ def my_callback_function_that_actually_draws_boxplot(plt, data, marked_models, h
         # Draw boxplot
         sns.boxplot(data=data[zone], x="Model", y="MAE", hue="Dataset", palette=dataset_split_palette, legend=zone == 'volontari',
                     log_scale=None, fliersize=0.0, showfliers=False, ax=ax[i, 0])
+        
+        # increase thickness of median and quartile lines and also of the box edges
+        for line in ax[i, 0].artists + ax[i, 0].lines:
+            line.set_linewidth(1.8)
+            line.set_color('black')
 
         # Annotate stars for marked models
         ymin, _ = ax[i, 0].get_ylim()
@@ -988,15 +1030,15 @@ def my_callback_function_that_actually_draws_boxplot(plt, data, marked_models, h
                 if model_label == key:
                     if holm_marked_models[zone] == key:
                         ax[i, 0].text(
-                            pos, star_y + 0.2, r"\textbf{$\bigstar$}",
+                            pos, star_y + (0.15 if not (title is not None and 'Black' in title and i == 1) else 0.07 ), r"\textbf{$\bigstar$}",
                             ha='center', va='top', fontsize=5, color='black', clip_on=False
                         )
                         break
                     else:
                         if marked_models[zone][key]:
                             ax[i, 0].text(
-                                pos, star_y, r"\textbf{*}",
-                                ha='center', va='top', fontsize=14, color='black', clip_on=False
+                                pos, star_y + 0.05, r"\textbf{*}",
+                                ha='center', va='top', fontsize=20, color='black', clip_on=False
                             )
                             break
 
@@ -1218,17 +1260,17 @@ def main():
     log_scale_target = 0
     n_train_records = 0
     seed_indexes = list(range(1, 30 + 1))
-    models = ["cocal_only", "basic_median_delta", "linear", "elasticnet", "decision_tree", "symbolic_regression", "svr", "random_forest", "bagging", "gradient_boosting", "adaboost", "mlp"]
-    #models = ["cocal_only", "basic_median_delta", "linear", "elasticnet", "symbolic_regression", "decision_tree"]
+    #models = ["cocal_only", "basic_median_delta", "linear", "elasticnet", "decision_tree", "symbolic_regression", "svr", "random_forest", "bagging", "gradient_boosting", "adaboost", "mlp"]
+    models = ["cocal_only", "basic_median_delta", "linear", "elasticnet", "symbolic_regression", "decision_tree"]
     #models = ["elasticnet", "symbolic_regression", "svr", "random_forest", "bagging", "gradient_boosting", "adaboost", "mlp"]
 
     #print_basic_scores_with_cap(None, None, None, path=path, dataset=dataset, test_dataset=None, features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, models=models, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes)
-    #mean_std_pm10_cocal_arpa(['volontari', 'carpineto', 'sincrotrone'])
-    #export_mae_boxplot(path=path, title='Black-Box Methods', same_scale=True, log_scale=False,features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, models=models, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes, dataset_split_palette=dataset_split_palette, dpi=1200, PLOT_ARGS=PLOT_ARGS)
+    mean_std_pm10_cocal_arpa(path, ['volontari', 'carpineto', 'sincrotrone'], 'symbolic_regression', features, selected_features, encoding, scaling, augmentation, test_size, n_iter, cv, linear_scaling, log_scale_target, n_train_records, seed_indexes)
+    #export_mae_boxplot(path=path, title='Glass-Box Methods', same_scale=False, log_scale=False,features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, models=models, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes, dataset_split_palette=dataset_split_palette, dpi=1200, PLOT_ARGS=PLOT_ARGS)
     #collect_mae_lineplot_data(path=path, dataset=dataset, features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, model='gradient_boosting', test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_record_list=[400, 800, 1200, 1600, 2000, 0], seed_indexes=seed_indexes, dataset_split_palette=dataset_split_palette, dpi=500, PLOT_ARGS=PLOT_ARGS)
 
-    print_formula_sr(path=path, dataset=dataset, features=features, selected_features=selected_features, encoding=encoding, scaling=scaling, augmentation=augmentation, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling,
-                     log_scale_target=log_scale_target, n_train_records=n_train_records, seed_index=10)
+    #print_formula_sr(path=path, dataset=dataset, features=features, selected_features=selected_features, encoding=encoding, scaling=scaling, augmentation=augmentation, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling,
+    #                 log_scale_target=log_scale_target, n_train_records=n_train_records, seed_index=10)
 
     #print_latex_like_table_with_all_metrics_and_datasets(path=path, features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, models=models, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes)
 

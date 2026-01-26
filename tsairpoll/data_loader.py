@@ -116,10 +116,10 @@ def load_arpa_data(file_path, station_name, parameter_name):
     df["timestamp"] = pd.to_datetime(df["timestamp"], format="%Y-%m-%d %H:%M:%S")
 
     # Convert to datetime and set timezone to UTC+1
-    df['timestamp'] = df['timestamp'].dt.tz_localize('Etc/GMT-1')  # UTC+1
+    df['timestamp'] = df['timestamp'].dt.tz_localize('Etc/GMT-1')  # UTC+1 # type: ignore
 
     # Convert to UTC
-    df['timestamp'] = df['timestamp'].dt.tz_convert('UTC')
+    df['timestamp'] = df['timestamp'].dt.tz_convert('UTC') # type: ignore
     df["timestamp"] = pd.to_datetime(df["timestamp"], format="%Y-%m-%d %H:%M:%S")
 
     # Remove rows with "N/D" in value
@@ -179,7 +179,7 @@ def load_cocal_data(file_path, ref_lat, ref_lon, max_distance, device_type):
 
     # Compute dew point
     df["dew_point"] = compute_dew_point(df["BM_T"], df["BM_H"])
-    cols = df.columns.tolist()  # Get current column order
+    cols = df.columns.tolist()  # Get current column order # type: ignore
     cols.insert(cols.index("timestamp") + 1, cols.pop(cols.index("dew_point")))  # Move "dew_point"
     df = df[cols]  # Apply new order
 
@@ -239,6 +239,8 @@ def derive_time_attributes(df):
     df["month"] = df["timestamp"].dt.month
     df["hour"] = df["timestamp"].dt.hour
     df["day_of_week"] = df["timestamp"].dt.dayofweek  # Monday=0, ..., Sunday=6
+    df["day_of_month"] = df["timestamp"].dt.day
+    df["week_of_month"] = (df["timestamp"].dt.day - 1) // 7 + 1
 
     # Define time of day (morning, afternoon, evening, night)
     def categorize_time_of_day(hour):
@@ -273,11 +275,11 @@ def derive_time_attributes(df):
     df["timestamp"] = df["timestamp"].str.split(".").str[0]
 
     # Drop unnecessary columns
-    df = df.drop(columns=['hour', 'month', 'day_of_week'])
+    #df = df.drop(columns=['hour', 'month', 'day_of_week', 'day_of_month', 'week_of_month'])
 
     # Move new columns to the beginning
     cols = list(df.columns)
-    df = df[cols[-3:] + cols[:-3]] # Ensures new attributes are placed first
+    df = df[cols[-8:] + cols[:-8]] # Ensures new attributes are placed first
 
     return df
 

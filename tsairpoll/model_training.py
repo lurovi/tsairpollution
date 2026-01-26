@@ -649,7 +649,7 @@ def preprocess_and_train(df, timestamps, selected_features, encoding_type, scali
             "regressor__criterion": ["squared_error", "friedman_mse", "absolute_error", "poisson"],
             "regressor__splitter": ["best", "random"],
             "regressor__max_depth": [3, 6, 9, 12, 15],
-            "regressor__max_features": ['sqrt', 'log2'],
+            "regressor__max_features": ['sqrt', 'log2', None],
         },
         "svr": {
             "regressor__kernel": ['linear', 'poly', 'rbf', 'sigmoid', 'precomputed'],
