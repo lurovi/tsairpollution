@@ -240,7 +240,19 @@ def derive_time_attributes(df):
     df["hour"] = df["timestamp"].dt.hour
     df["day_of_week"] = df["timestamp"].dt.dayofweek  # Monday=0, ..., Sunday=6
     df["day_of_month"] = df["timestamp"].dt.day
-    df["week_of_month"] = (df["timestamp"].dt.day - 1) // 7 + 1
+    
+    # Week of month: only 4 values based on 7-day intervals
+    def get_week_of_month(day):
+        if day <= 7:
+            return 1
+        elif day <= 14:
+            return 2
+        elif day <= 21:
+            return 3
+        else:
+            return 4
+    
+    df["week_of_month"] = df["day_of_month"].apply(get_week_of_month)
 
     # Define time of day (morning, afternoon, evening, night)
     def categorize_time_of_day(hour):
@@ -267,10 +279,26 @@ def derive_time_attributes(df):
     # Define weekend or not
     def categorize_weekend(day_of_week):
         return "weekend" if day_of_week in [5, 6] else "weekday"
+    
+    # Categorize day of week
+    def categorize_day_of_week(day_of_week):
+        days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        return days[day_of_week]
+    
+    def categorize_week_of_month(week_of_month):
+        return f"week{week_of_month}"
+    
+    def categorize_month(month):
+        months = ["january", "february", "march", "april", "may", "june", 
+                  "july", "august", "september", "october", "november", "december"]
+        return months[month - 1]
 
     df["season"] = df["month"].apply(categorize_season)
     df["weekend"] = df["day_of_week"].apply(categorize_weekend)
     df["time_of_day"] = df["hour"].apply(categorize_time_of_day)
+    df["day_of_week"] = df["day_of_week"].apply(categorize_day_of_week)
+    df["week_of_month"] = df["week_of_month"].apply(categorize_week_of_month)
+    df["month"] = df["month"].apply(categorize_month)
     df["timestamp"] = df["timestamp"].astype(str)
     df["timestamp"] = df["timestamp"].str.split(".").str[0]
 

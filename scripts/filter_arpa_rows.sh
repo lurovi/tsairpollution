@@ -8,7 +8,9 @@ input_file="$1"
 output_file="$2"
 
 # Extract header + matching rows
-(head -n 1 "$input_file" && grep 'Trieste - P.zza Volontari Giuliani' "$input_file") > "$output_file"
+#(head -n 1 "$input_file" && grep 'Trieste - P.zza Volontari Giuliani' "$input_file") > "$output_file"
+(head -n 1 "$input_file" && grep 'Particelle sospese PM10' "$input_file") > "$output_file"
+
 
 echo "Filtered rows (with header) saved to $output_file"
 

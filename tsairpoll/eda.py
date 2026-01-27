@@ -1,6 +1,17 @@
 import pandas as pd
-import matplotlib.pyplot as plt
 import seaborn as sns
+from matplotlib import pyplot as plt
+preamble = r'''
+            \usepackage{amsmath}
+            \usepackage{libertine}
+            \usepackage{xspace}
+
+            '''
+plt.rcParams.update({
+    "text.usetex": True, "font.family": "serif", "font.serif": "Computer Modern Roman",
+    "text.latex.preamble": preamble,  'pdf.fonttype': 42, 'ps.fonttype': 42,
+    'axes.formatter.use_mathtext': True, 'axes.unicode_minus': False,
+})
 
 
 def plot_three_lines(x, y1, y2, y3, labels, title="Line Plot"):
@@ -16,11 +27,19 @@ def plot_three_lines(x, y1, y2, y3, labels, title="Line Plot"):
     plt.show()
 
 
-def perform_eda(df):
+def perform_eda(df, features):
     """Perform exploratory data analysis on the dataset."""
-
+    df = df.copy()
+    df = df[features]
     print("Dataset Info:")
     print(df.info())
+
+    # check if pm10 arpa is always positive
+    if (df['PM10_ARPA'] < 0).any():
+        print("Warning: PM10_ARPA contains negative values.")
+    # check if pm10 is always positive
+    if (df['PM10_MEAN'] < 0).any():
+        print("Warning: PM10_MEAN contains negative values.")
 
     print("\nSummary Statistics:")
     print(df.describe())
@@ -33,7 +52,7 @@ def perform_eda(df):
 
     # Plot heatmap for numerical feature correlations
     plt.figure(figsize=(15, 15))
-    sns.heatmap(numeric_df.corr(), annot=True, cmap="coolwarm", fmt=".2f")
+    sns.heatmap(numeric_df.corr(method='pearson'), annot=True, cmap="coolwarm", fmt=".2f")
     plt.title("Feature Correlation Heatmap")
     plt.show()
 
@@ -72,22 +91,53 @@ def perform_eda(df):
     # KDE plots for categorical variables w.r.t. target variable
     categorical_columns = df.select_dtypes(include=["object"]).columns.tolist()
 
+    # capitalize header and categorical values
+    for col in categorical_columns:
+        df.rename(columns={col: col.capitalize().replace("_", " ")}, inplace=True)
+    categorical_columns = [col.capitalize().replace("_", " ") for col in categorical_columns]
+    for col in categorical_columns:
+        df[col] = df[col].str.capitalize().replace("_", " ")
+
     n_cats = len(categorical_columns)
-    fig, axes = plt.subplot_mosaic([[f"cat_{i}" for i in range(n_cats)]], figsize=(5 * n_cats, 5))
+    # make this 3x3 grid if more than 3
+    if n_cats > 3:
+        n_cols = 3
+        n_rows = 2
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(15, 10), layout='constrained')
+        axes = axes.flatten()
+    else:
+        fig, axes = plt.subplot_mosaic([[f"cat_{i}" for i in range(n_cats)]], figsize=(5 * n_cats, 5))
 
     for i, cat_col in enumerate(categorical_columns):
-        ax = axes[f"cat_{i}"]
+        ax = axes[i] if n_cats > 3 else axes[f"cat_{i}"]
         unique_categories = df[cat_col].dropna().unique()
 
         for category in unique_categories:
             subset = df[df[cat_col] == category]
-            sns.kdeplot(subset[target_column], label=category, fill=True, alpha=0.3, ax=ax)
+            # cut plot at 0 for pm10 arpa
+            sns.kdeplot(subset[target_column], label=category, fill=True, alpha=0.3, ax=ax, clip=(0, None))
 
-        ax.set_title(f"KDE Plot of {target_column} by {cat_col}")
-        ax.set_xlabel(target_column)
-        ax.set_ylabel("Density")
-        ax.legend(title=cat_col)
+        # Grid and ticks
+        ax.grid(True, axis='both', which='major', color='gray', linestyle='--', linewidth=0.5)
+        ax.tick_params(axis='both', which='both', reset=False, bottom=False, top=False, left=False, right=False)
 
-    plt.tight_layout()
-    plt.show()
+        ax.set_xlabel('ARPA PM10', fontsize=20)
+        ax.set_ylabel("Density", fontsize=20)
+        ax.set_ylim(0, 0.1)
+        ax.set_yticks([0.0, 0.02, 0.04, 0.06, 0.08])
+        ax.set_xlim(-1, 125)
+        ax.set_xticks([0, 25, 50, 75, 100, 120])
+        if i in [0, 1, 2]:
+            ax.set_xlabel('')
+            ax.set_xticklabels([])
+        if i in [1, 2, 4, 5]:
+            ax.set_ylabel('')
+            ax.set_yticklabels([])
+        ax.legend(title=cat_col, fontsize=12, title_fontsize=14)
+
+        
+
+    #plt.tight_layout()
+    #plt.show()
+    fig.savefig('Plots_eda_categorical_kde.pdf', dpi=800)
 
