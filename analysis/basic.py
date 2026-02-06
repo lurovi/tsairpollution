@@ -3,6 +3,8 @@ import warnings
 import zlib
 from PIL import Image
 
+from sympy import simplify
+
 import fastplot
 import seaborn as sns
 from matplotlib import pyplot as plt
@@ -13,6 +15,7 @@ from matplotlib.ticker import FuncFormatter
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, OneHotEncoder
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error, root_mean_squared_error
 from sklearn.compose import ColumnTransformer
 
 import scipy.stats as stats
@@ -27,7 +30,7 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
-from tsairpoll.data_loader import create_dir_path_results, load_data, split_data
+from tsairpoll.data_loader import create_dir_path_results, load_data, split_data, haversine, compute_dew_point
 import statistics
 import json
 from prettytable import PrettyTable
@@ -46,6 +49,193 @@ from pyproj import Transformer
 # ======================================================================================
 # MODEL EVALUATION
 # ======================================================================================
+
+def load_hybrid_model_symbolic_regression_elasticnet(print_all, actual_data_path, max_distance, path, features, selected_features, encoding, scaling, augmentation, test_size, n_iter, cv, linear_scaling, log_scale_target, n_train_records, seed_index):
+    """
+    LAT_MEAN,
+    LON_MEAN,
+    season_autumn,
+    season_spring,
+    season_summer,
+    season_winter,
+    time_of_day_afternoon,
+    time_of_day_evening,
+    time_of_day_morning,
+    time_of_day_night,
+    dew_point,
+    NUM_MEASUREMENTS,
+    BM_P_MEAN,
+    GPS_KMH_MEAN,
+    GPS_DIR_MEAN,
+    GPS_ALT_MEAN,
+    PM10_MEAN,
+    PM10_ARPA
+    """
+    if encoding != 'onehot':
+        raise ValueError("Hybrid model only works with onehot encoding.")
+    if scaling != 'robust':
+        raise ValueError("Hybrid model only works with robust scaling.")
+    
+    ref_lat, ref_lon = 45.6544, 13.7890  # Volontari ARPA's coordinates
+    sr_string_path = create_dir_path_results(
+        base_path=path,
+        dataset='volontari',
+        features=features,
+        encoding=encoding,
+        scaling=scaling,
+        augmentation=augmentation,
+        model='symbolic_regression',
+        test_size=test_size,
+        n_iter=n_iter,
+        cv=cv,
+        linear_scaling=linear_scaling,
+        log_scale_target=log_scale_target,
+        n_train_records=n_train_records,
+    )
+    el_string_path = create_dir_path_results(
+        base_path=path,
+        dataset='volontari',
+        features=features,
+        encoding=encoding,
+        scaling=scaling,
+        augmentation=augmentation,
+        model='elasticnet',
+        test_size=test_size,
+        n_iter=n_iter,
+        cv=cv,
+        linear_scaling=linear_scaling,
+        log_scale_target=log_scale_target,
+        n_train_records=n_train_records,
+    )
+    
+    # "season,time_of_day,dew_point,NUM_MEASUREMENTS,BM_P_MEAN,GPS_KMH_MEAN,GPS_DIR_MEAN,GPS_ALT_MEAN,PM10_MEAN,PM10_ARPA"
+    
+    search_sr = load_pkl(os.path.join(sr_string_path, f'search{seed_index}.pkl'))
+    search_el = load_pkl(os.path.join(el_string_path, f'search{seed_index}.pkl'))
+    if print_all:
+        print(search_sr.best_estimator_.pipeline['preprocessor'].named_transformers_['cat'].get_feature_names_out())
+        print(search_el.best_estimator_.pipeline['preprocessor'].named_transformers_['cat'].get_feature_names_out())
+    # ['season_autumn' 'season_spring' 'season_summer' 'season_winter'
+    #  'time_of_day_afternoon' 'time_of_day_evening' 'time_of_day_morning'
+    #  'time_of_day_night']
+    if print_all:
+        print(search_sr.best_estimator_.pipeline['preprocessor'].named_transformers_['num'].center_)
+        print(search_el.best_estimator_.pipeline['preprocessor'].named_transformers_['num'].center_)
+        print(search_sr.best_estimator_.pipeline['preprocessor'].named_transformers_['num'].scale_)
+        print(search_el.best_estimator_.pipeline['preprocessor'].named_transformers_['num'].scale_)
+    
+    medians = search_sr.best_estimator_.pipeline['preprocessor'].named_transformers_['num'].center_
+    iqrs = search_sr.best_estimator_.pipeline['preprocessor'].named_transformers_['num'].scale_
+    sr_sympy = str(search_sr.best_estimator_.pipeline['regressor'].sympy())
+    coefs = search_el.best_estimator_.pipeline['regressor'].coef_
+    intercept = search_el.best_estimator_.pipeline['regressor'].intercept_
+    cat_feature_names = search_sr.best_estimator_.pipeline['preprocessor'].named_transformers_['cat'].get_feature_names_out()
+    num_feature_names = search_sr.best_estimator_.pipeline['preprocessor'].named_transformers_['num'].get_feature_names_out()
+    
+    df = load_data(actual_data_path)
+    df = df[['LAT_MEAN', 'LON_MEAN'] + selected_features + ['PM10_ARPA']].copy()
+    y = df['PM10_ARPA'].to_numpy()
+    cocal_only = df['PM10_MEAN'].to_numpy()
+    if print_all:
+        print(df.head())
+    
+    # Compute distances and filter nearby rows
+    df["distance"] = haversine(df["LAT_MEAN"], df["LON_MEAN"], ref_lat, ref_lon)
+    
+    center_mask = df["distance"] <= max_distance
+    far_mask = df["distance"] > max_distance
+    df = df.drop(columns=["LAT_MEAN", "LON_MEAN", "distance", "PM10_ARPA"])
+    df_center = df[center_mask]
+    df_far = df[far_mask]
+    df_center.reset_index(drop=True, inplace=True)
+    df_far.reset_index(drop=True, inplace=True)
+    X_center = df_center.copy()
+    X_far = df_far.copy()
+    
+    preds_center_sr = search_sr.predict(X_center) if len(df_center) > 0 else np.array([])
+    preds_far_el = search_el.predict(X_far) if len(df_far) > 0 else np.array([])
+    
+    # concatenate predictions
+    preds = np.zeros(len(df))
+    preds[center_mask] = preds_center_sr
+    preds[far_mask] = preds_far_el
+
+    # compute metrics of the conctenated predictions
+    r2 = r2_score(y, preds)
+    mae = mean_absolute_error(y, preds)
+    rmse = root_mean_squared_error(y, preds)
+    print(f"1 - Hybrid Model (SR within {max_distance}m, EL beyond) - R2: {r2}, MAE: {mae}, RMSE: {rmse}")
+    
+    df['season'] = pd.Categorical(df['season'], categories=sorted(['autumn', 'spring', 'summer', 'winter']), ordered=False)
+    df['time_of_day'] = pd.Categorical(df['time_of_day'], categories=sorted(['afternoon', 'evening', 'morning', 'night']), ordered=False)
+    categorical_cols = df.select_dtypes(include=['category']).columns.tolist()
+    df = pd.get_dummies(df, columns=categorical_cols, dtype=int)
+    
+    df_center = df[center_mask]
+    df_far = df[far_mask]
+    df_center.reset_index(drop=True, inplace=True)
+    df_far.reset_index(drop=True, inplace=True)
+
+    if print_all:
+        print(search_sr.best_estimator_.pipeline['preprocessor'].named_transformers_['cat'].get_feature_names_out())
+        print(search_sr.best_estimator_.pipeline['preprocessor'].named_transformers_['num'].get_feature_names_out())
+        print(search_sr.best_estimator_.pipeline['preprocessor'].named_transformers_['num'].center_)
+        print(search_sr.best_estimator_.pipeline['preprocessor'].named_transformers_['num'].scale_)
+        print(search_sr.best_estimator_.pipeline['regressor'].sympy())
+        print(search_el.best_estimator_.pipeline['regressor'].coef_)
+        print(search_el.best_estimator_.pipeline['regressor'].intercept_)
+        
+    #hybrid_interpretable_model(dataframe=df)
+    for i in range(len(num_feature_names) - 1, -1, -1):
+        x = f"x{i + len(cat_feature_names)}"
+        x_scaled = f"(({num_feature_names[i]} - {medians[i]})/{iqrs[i]})"
+        sr_sympy = sr_sympy.replace(x, x_scaled)
+    
+    for i in range(len(cat_feature_names) - 1, -1, -1):
+        x = f"x{i}"
+        x_name = f"{cat_feature_names[i]}"
+        sr_sympy = sr_sympy.replace(x, x_name)
+    
+    print(sr_sympy)
+    sr_sympy = simplify(parse_expr(sr_sympy, evaluate=True))
+    print(sr_sympy)
+
+    preds_center_sr = 7.121288**(0.086461845873451697*df_center['dew_point'] - 1.0625816000264272)*(0.087804074962728641*df_center['BM_P_MEAN'] - 86.63514053991303) + np.abs(0.890044936950707*df_center['PM10_MEAN'] - np.abs(-0.23230223138202909*df_center['BM_P_MEAN'] + 0.13966812947870454*df_center['GPS_KMH_MEAN'] - 0.404384944593045*df_center['PM10_MEAN'] + df_center['season_autumn'] + 242.64444926737826) + 5.7862680445378522) + 4.1231313
+    
+    el_str = ""
+    
+    for i in range(len(cat_feature_names)):
+        el_str += f" + {coefs[i]}*{cat_feature_names[i]}"
+    
+    for i in range(len(num_feature_names)):
+        el_str += f" + {coefs[i + len(cat_feature_names)]}*(({num_feature_names[i]} - {medians[i]})/{iqrs[i]})"
+    
+    el_str += f" + {intercept}"
+
+    print(el_str)
+    el_str = simplify(parse_expr(el_str, evaluate=True))
+    print(el_str)
+    
+    preds_far_el = 0.21922735688784111*df_far['BM_P_MEAN'] + 0.02326372850401895*df_far['GPS_ALT_MEAN'] - 0.0028953559222595437*df_far['GPS_DIR_MEAN'] - 0.074144178352954233*df_far['GPS_KMH_MEAN'] - 0.1716236221740934*df_far['NUM_MEASUREMENTS'] + 0.80541566340406936*df_far['PM10_MEAN'] + 0.51015088847029162*df_far['dew_point'] - 1.5437585049381666*df_far['season_autumn'] + 1.800796053315133*df_far['season_spring'] - 0.8668227841881248*df_far['season_summer'] + 0.6006034360228186*df_far['season_winter'] + 0.8874388174662594*df_far['time_of_day_afternoon'] + 0.004663331919003846*df_far['time_of_day_morning'] - 2.844773187462841*df_far['time_of_day_night'] - 217.23136634033793
+    
+    # concatenate predictions
+    preds = np.zeros(len(df))
+    preds[center_mask] = preds_center_sr
+    preds[far_mask] = preds_far_el
+    
+    # compute metrics of the conctenated predictions
+    r2 = r2_score(y, preds)
+    mae = mean_absolute_error(y, preds)
+    rmse = root_mean_squared_error(y, preds)
+    print(f"2 - Hybrid Model (SR within {max_distance}m, EL beyond) - R2: {r2}, MAE: {mae}, RMSE: {rmse}")  
+    
+    # compute metrics of cocal only
+    r2_cocal = r2_score(y, cocal_only)
+    mae_cocal = mean_absolute_error(y, cocal_only)
+    rmse_cocal = root_mean_squared_error(y, cocal_only)
+    print(f"COCAL ONLY - R2: {r2_cocal}, MAE: {mae_cocal}, RMSE: {rmse_cocal}")
+    
+
 
 def apply_aggregated_model_from_repetitions(path, model, dataset_name, features, selected_features, encoding, scaling, augmentation, test_size, n_iter, cv, linear_scaling, log_scale_target, n_train_records, seed_indexes):
     """
@@ -940,6 +1130,8 @@ def my_callback_function_that_actually_draws_lineplot_on_dataset_with_arpa_vs_co
         ax[i, 0].grid(True, axis='both', which='major', color='gray', linestyle='--', linewidth=0.5)
         ax[i, 0].tick_params(axis='both', which='both', reset=False, bottom=False, top=False, left=False, right=False)
 
+        ax[i, 0].set_ylim(0, 100)
+        ax[i, 0].set_yticks([0, 20, 40, 60, 80, 100])
         ax[i, 0].set_xticks(np.arange(0, len(timestamps), max(1, len(timestamps)//10)))
         ax[i, 0].set_xticklabels([str(timestamps.iloc[i]['timestamp']) for i in range(0, len(timestamps), max(1, len(timestamps)//10))], rotation=45)
         ax[i, 0].set_ylabel("PM10 Concentration (µg/m³)")
@@ -1267,13 +1459,13 @@ def main():
     log_scale_target = 0
     n_train_records = 0
     seed_indexes = list(range(1, 30 + 1))
-    #models = ["cocal_only", "basic_median_delta", "linear", "elasticnet", "decision_tree", "symbolic_regression", "svr", "random_forest", "bagging", "gradient_boosting", "adaboost", "mlp"]
+    models = ["cocal_only", "basic_median_delta", "linear", "elasticnet", "decision_tree", "symbolic_regression", "svr", "random_forest", "bagging", "gradient_boosting", "adaboost", "mlp"]
     #models = ["cocal_only", "basic_median_delta", "linear", "elasticnet", "symbolic_regression", "decision_tree"]
-    models = ["elasticnet", "symbolic_regression", "svr", "random_forest", "bagging", "gradient_boosting", "adaboost", "mlp"]
+    #models = ["elasticnet", "symbolic_regression", "svr", "random_forest", "bagging", "gradient_boosting", "adaboost", "mlp"]
 
     #print_basic_scores_with_cap(None, None, None, path=path, dataset=dataset, test_dataset=None, features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, models=models, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes)
     #mean_std_pm10_cocal_arpa(path, ['volontari', 'carpineto', 'sincrotrone'], 'symbolic_regression', features, selected_features, encoding, scaling, augmentation, test_size, n_iter, cv, linear_scaling, log_scale_target, n_train_records, seed_indexes)
-    export_mae_boxplot(path=path, title='Black-Box Methods', same_scale=False, log_scale=False,features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, models=models, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes, dataset_split_palette=dataset_split_palette, dpi=1200, PLOT_ARGS=PLOT_ARGS)
+    #export_mae_boxplot(path=path, title='Black-Box Methods', same_scale=False, log_scale=False,features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, models=models, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_indexes=seed_indexes, dataset_split_palette=dataset_split_palette, dpi=1200, PLOT_ARGS=PLOT_ARGS)
     #collect_mae_lineplot_data(path=path, dataset=dataset, features=features, encoding=encoding, scaling=scaling, augmentation=augmentation, model='gradient_boosting', test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_record_list=[400, 800, 1200, 1600, 2000, 0], seed_indexes=seed_indexes, dataset_split_palette=dataset_split_palette, dpi=500, PLOT_ARGS=PLOT_ARGS)
 
     #print_formula_sr(path=path, dataset=dataset, features=features, selected_features=selected_features, encoding=encoding, scaling=scaling, augmentation=augmentation, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling,
@@ -1292,6 +1484,12 @@ def main():
     #   ["Volontari", "Carpineto", "Sincrotrone"],
     #   output_path="combined_maps.png"
     #)
+    
+    #for max_distance in [1000, 2000, 3000, 4000, 5000]:
+    #    print(f'=== MAX DISTANCE: {max_distance} ===')
+    #    for seed_index in list(range(1, 30 + 1)):
+    #        load_hybrid_model_symbolic_regression_elasticnet(max_distance=max_distance, path=path, dataset_name='volontari', features=features, selected_features=selected_features, encoding=encoding, scaling=scaling, augmentation=augmentation, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_index=seed_index)
+    load_hybrid_model_symbolic_regression_elasticnet(print_all=True, actual_data_path=f'../data/formatted/2025/volontari.csv', max_distance=4000, path=path, features=features, selected_features=selected_features, encoding=encoding, scaling=scaling, augmentation=augmentation, test_size=test_size, n_iter=n_iter, cv=cv, linear_scaling=linear_scaling, log_scale_target=log_scale_target, n_train_records=n_train_records, seed_index=7)
 
 
 

@@ -33,8 +33,8 @@ def quick():
     # save_csv_data(test_df, 'data/formatted/volontari_eda.csv')
     # save_csv_data(train_timestamp, 'data/formatted/volontari_real_timestamps.csv')
     # save_csv_data(test_timestamp, 'data/formatted/volontari_eda_timestamps.csv')
-    perform_eda(load_data('data_pre/formatted/2025/volontari.csv'),
-                ["month", "day_of_week", "week_of_month", "season", "weekend", "time_of_day", "dew_point", "NUM_MEASUREMENTS", "DS_T_MEAN", "BM_T_MEAN", "BM_H_MEAN", "BM_P_MEAN", "GPS_KMH_MEAN", "GPS_DIR_MEAN", "GPS_ALT_MEAN", "PM10_MEAN", "PM10_ARPA"])
+    #perform_eda(load_data('data_pre/formatted/2025/volontari.csv'),
+    #            ["month", "day_of_week", "week_of_month", "season", "weekend", "time_of_day", "dew_point", "NUM_MEASUREMENTS", "DS_T_MEAN", "BM_T_MEAN", "BM_H_MEAN", "BM_P_MEAN", "GPS_KMH_MEAN", "GPS_DIR_MEAN", "GPS_ALT_MEAN", "PM10_MEAN", "PM10_ARPA"])
     # FEATURES: "season","weekend","time_of_day","device_type","gps_kmh","gps_dir","gps_alt","BM_H","BM_P","BM_T","DS_T","PM10","PM10_ARPA"
     # selected_features = ["time_of_day", "gps_kmh", "BM_H", "BM_P", "BM_T", "DS_T", "PM10"]
     #
@@ -59,6 +59,10 @@ def quick():
     # print(score_dict['test_score'])
     # plot_three_lines(list(range(1, len(test_idx) + 1)), y_test, score_dict['test_pred'], X_test.values[:, -1].flatten(), ['arpa', 'estimated', 'cocal'])
 
+    # concatenate rows from a list of csv files into a single csv file
+    l = [load_data('data/formatted/2025/volontari.csv'), load_data('data/formatted/2025/carpineto.csv'), load_data('data/formatted/2025/sincrotrone.csv')]
+    merged_df = pd.concat(l, ignore_index=True)
+    save_csv_data(merged_df, 'data/formatted/2025/merged_zones.csv')
 
 if __name__ == '__main__':
     quick()
