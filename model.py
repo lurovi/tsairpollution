@@ -1,3 +1,11 @@
+# Python version >= 3.10.16
+# argparse version >= 1.1
+# numpy version >= 2.0.2
+# pandas version >= 2.3.1
+# scikit-learn version >= 1.6.1
+
+import argparse
+import os
 import numpy as np
 import pandas as pd
 from sklearn.metrics import root_mean_squared_error, mean_absolute_error, r2_score
@@ -416,7 +424,7 @@ def evaluate_models(df: pd.DataFrame) -> dict:
 # Augmenting Original Data with Predictions
 # =============================================================================
 
-def convert_data_back_to_cocal_format_with_predictions(cocal_file: str, df_aggregated_with_preds: pd.DataFrame) -> pd.DataFrame:
+def convert_data_back_to_cocal_format_with_predictions(cocal_file: str, df_aggregated_with_preds: pd.DataFrame, verbose: bool) -> pd.DataFrame:
     # Make a copy of the original cocal data
     cocal_df = load_data(cocal_file)
 
@@ -437,8 +445,9 @@ def convert_data_back_to_cocal_format_with_predictions(cocal_file: str, df_aggre
     merged_df = sample_df.merge(df_aggregated_with_preds, on=['time', 'lat', 'lon', 'device'])
     merged_df.rename(columns={"PM10_SR_EN": "val"}, inplace=True)
 
-    print(cocal_df.head(20))
-    print(merged_df.head(20))
+    if verbose:
+        print(cocal_df.head(20))
+        print(merged_df.head(20))
 
     # Add the rows from merged_df to cocal_df and then order by timestamp asceindingly
     cocal_df = pd.concat([cocal_df, merged_df], ignore_index=True)
@@ -450,11 +459,12 @@ def convert_data_back_to_cocal_format_with_predictions(cocal_file: str, df_aggre
     merged_df['time'] = merged_df['time'].str.split(".").str[0]
     merged_df['time'] = pd.to_datetime(merged_df['time'], format="%Y-%m-%d %H:%M:%S")
     cocal_df = cocal_df.sort_values(by=['time', 'device']).reset_index(drop=True)
-    print(cocal_df.head(50))
+    if verbose:
+        print(cocal_df.head(50))
     return cocal_df
 
 
-def main():
+def test():
     """
     "Stazione","Lon","Lat","Indirizzo" 
     "Trieste - via Carpineto","13.787500000","45.6232","via del Carpineto - Trieste (TS)"
@@ -484,11 +494,51 @@ def main():
     #print(evaluate_models(df_with_predictions))
     
     # Convert back to COCAL format with predictions
-    df_cocal_with_preds = convert_data_back_to_cocal_format_with_predictions(cocal_file=f'data_pre/raw/cocal/2025/{zone}/cocal.csv', df_aggregated_with_preds=df_with_predictions)
+    df_cocal_with_preds = convert_data_back_to_cocal_format_with_predictions(cocal_file=f'data_pre/raw/cocal/2025/{zone}/cocal.csv', df_aggregated_with_preds=df_with_predictions, verbose=True)
     
     # Save the result
-    #save_csv_data(df_with_predictions, 'data_pre/processed/with_predictions.csv')
+    #save_csv_data(df_cocal_with_preds, 'data_pre/processed/with_predictions.csv')
+
+def main():
+    # Read command-line arguments with string path to the .csv input file, the .csv output file, the distance in meters threshold, a boolean flag for verbose mode
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input", help="Path to the input .csv file")
+    parser.add_argument("--output", help="Path to the output .csv file")
+    parser.add_argument("--distance", type=int, help="Distance in meters threshold")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose mode")
+    args = parser.parse_args()
+    
+    # Check if the input file is provided and if it exists via os
+    if args.input is None:
+        print("Error: Input file path is required. Use --input to specify the path.")
+        return
+    if not os.path.isfile(args.input):
+        print(f"Error: Input file '{args.input}' does not exist.")
+        return
+    # Check if the output file is provided and if the output file does not exist already via os
+    if args.output is None:
+        print("Error: Output file path is required. Use --output to specify the path.")
+        return
+    if os.path.isfile(args.output):
+        print(f"Error: Output file '{args.output}' already exists. Please choose a different path or remove the existing file.")
+        return
+    # Check if the distance is provided and if it is a positive integer
+    if args.distance is None:
+        print("Error: Distance threshold is required. Use --distance to specify the distance in meters.")
+        return
+    if args.distance < 0:
+        print("Error: Distance threshold must be a non-negative integer.")
+        return
+    # Process data (aggregation, feature engineering)
+    df_aggregated = eventually_merge_and_extract_time_categories(cocal_file=args.input)
+    # Apply ML models to get predictions
+    df_with_predictions = apply_models(df_aggregated, ref_lat=REF_LAT, ref_lon=REF_LON, max_distance=args.distance)
+    # Convert back to COCAL format with predictions
+    df_cocal_with_preds = convert_data_back_to_cocal_format_with_predictions(cocal_file=args.input, df_aggregated_with_preds=df_with_predictions, verbose=args.verbose)
+    # Save the result
+    save_csv_data(df_cocal_with_preds, args.output)
 
 
 if __name__ == "__main__":
+    #test()
     main()
