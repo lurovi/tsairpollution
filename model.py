@@ -128,7 +128,7 @@ def load_cocal_data(file_path, aggregate=False, filter=False, coordinates=None):
     """Load, filter, and process COCAL data to match ARPA timestamps."""
 
     # Load dataset, any type of data loading must be done here to ensure that the data is in the correct format for the subsequent processing steps
-    df = pd.read_csv(file_path, delimiter=",", decimal=".")
+    df = load_data(file_path)
 
     # Convert timestamp
     df = df.rename(columns={"time": "timestamp"})    
@@ -373,8 +373,7 @@ def save_csv_data(df, path):
 
 def load_data(file_path):    
     """Load the dataset from a CSV file."""
-    df = pd.read_csv(file_path, delimiter=',', decimal='.') 
-    return df
+    return pd.read_csv(file_path, delimiter=',', decimal='.') 
 
 # =============================================================================
 # Model Application and Evaluation
