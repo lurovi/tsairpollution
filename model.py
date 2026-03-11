@@ -127,7 +127,7 @@ def load_arpa_data(file_path, station_name, parameter_name):
 def load_cocal_data(file_path, aggregate=False, filter=False, coordinates=None):
     """Load, filter, and process COCAL data to match ARPA timestamps."""
 
-    # Load dataset
+    # Load dataset, any type of data loading must be done here to ensure that the data is in the correct format for the subsequent processing steps
     df = pd.read_csv(file_path, delimiter=",", decimal=".")
 
     # Convert timestamp
@@ -535,7 +535,7 @@ def main():
     df_with_predictions = apply_models(df_aggregated, ref_lat=REF_LAT, ref_lon=REF_LON, max_distance=args.distance)
     # Convert back to COCAL format with predictions
     df_cocal_with_preds = convert_data_back_to_cocal_format_with_predictions(cocal_file=args.input, df_aggregated_with_preds=df_with_predictions, verbose=args.verbose)
-    # Save the result
+    # Save the result, any type of data saving must be done here
     save_csv_data(df_cocal_with_preds, args.output)
 
 
