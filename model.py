@@ -124,11 +124,11 @@ def load_arpa_data(file_path, station_name, parameter_name):
     return df.rename(columns={"value": label})
 
 
-def load_cocal_data(file_path, aggregate=False, filter=False, coordinates=None):
+def load_cocal_data(data, aggregate=False, filter=False, coordinates=None):
     """Load, filter, and process COCAL data to match ARPA timestamps."""
 
-    # Load dataset, any type of data loading must be done here to ensure that the data is in the correct format for the subsequent processing steps
-    df = load_data(file_path)
+    # Create a copy of the original data to avoid modifying it directly
+    df = data.copy()
 
     # Convert timestamp
     df = df.rename(columns={"time": "timestamp"})    
@@ -303,7 +303,7 @@ def derive_time_attributes(df):
     return df
 
 
-def eventually_merge_and_extract_time_categories(cocal_file, aggregate=False, filter=False, arpa_file=None, station_name=None, coordinates=None, parameter_name=None):
+def eventually_merge_and_extract_time_categories(cocal_data, aggregate=False, filter=False, arpa_file=None, station_name=None, coordinates=None, parameter_name=None):
     """Merge ARPA and COCAL datasets and compute PM10 delta."""
 
     is_arpa_provided = arpa_file is not None and station_name is not None and coordinates is not None and parameter_name is not None
@@ -312,7 +312,7 @@ def eventually_merge_and_extract_time_categories(cocal_file, aggregate=False, fi
         df_arpa = load_arpa_data(arpa_file, station_name, parameter_name)
     else:
         df_arpa = None
-    df_cocal = load_cocal_data(cocal_file, aggregate=aggregate, filter=filter, coordinates=coordinates)
+    df_cocal = load_cocal_data(cocal_data, aggregate=aggregate, filter=filter, coordinates=coordinates)
 
     # Merge on hourly timestamps
     df_cocal['timestamp'] = df_cocal['timestamp'].dt.tz_localize(None)
@@ -366,14 +366,24 @@ def eventually_merge_and_extract_time_categories(cocal_file, aggregate=False, fi
 # CSV Data Saving and Loading
 # =============================================================================
 
-def save_csv_data(df, path):
-    """Save the DataFrame to a .csv file."""
-    df.to_csv(path, sep=',', index=False)
+def save_data(df, path, io_mode):
+    """Save the DataFrame."""
+    if io_mode == 'csv':
+        df.to_csv(path, sep=',', index=False)
+    elif io_mode == 'sql':
+        raise NotImplementedError("SQL saving is not implemented yet.")
+    else:
+        raise ValueError(f"Unsupported io_mode: {io_mode}.")
 
 
-def load_data(file_path):    
-    """Load the dataset from a CSV file."""
-    return pd.read_csv(file_path, delimiter=',', decimal='.') 
+def load_data(file_path, io_mode):
+    """Load the dataset."""
+    if io_mode == 'csv':
+        return pd.read_csv(file_path, delimiter=',', decimal='.')
+    elif io_mode == 'sql':
+        raise NotImplementedError("SQL loading is not implemented yet.")
+    else:
+        raise ValueError(f"Unsupported io_mode: {io_mode}.")
 
 # =============================================================================
 # Model Application and Evaluation
@@ -423,9 +433,8 @@ def evaluate_models(df: pd.DataFrame) -> dict:
 # Augmenting Original Data with Predictions
 # =============================================================================
 
-def convert_data_back_to_cocal_format_with_predictions(cocal_file: str, df_aggregated_with_preds: pd.DataFrame, verbose: bool) -> pd.DataFrame:
-    # Make a copy of the original cocal data
-    cocal_df = load_data(cocal_file)
+def convert_data_back_to_cocal_format_with_predictions(cocal_data: pd.DataFrame, df_aggregated_with_preds: pd.DataFrame, verbose: bool) -> pd.DataFrame:
+    cocal_df = cocal_data
 
     sample_df = cocal_df[cocal_df['sensor'] == 'PM10'].copy()
     # Ensure time column is datetime in both dataframes
@@ -483,20 +492,22 @@ def test():
     dict_zone_station = {'volontari': "Trieste - P.zza Volontari Giuliani",
                          'carpineto': "Trieste - via Carpineto",
                          'sincrotrone': "Trieste - Sincrotrone"}
+    io_mode = 'csv'
     # Process data (aggregation, feature engineering)
     zone = 'carpineto'
-    #df_aggregated = eventually_merge_and_extract_time_categories(cocal_file=f'data_pre/raw/cocal/2025/{zone}/cocal.csv', aggregate=True, filter=True, arpa_file=f'data_pre/raw/arpa/2025/pm10/{zone}/arpa.csv', station_name=dict_zone_station[zone], coordinates=zone_to_coordinates[zone], parameter_name="Particelle sospese PM10")
-    df_aggregated = eventually_merge_and_extract_time_categories(cocal_file=f'data_pre/raw/cocal/2025/{zone}/cocal.csv')
+    cocal_data = load_data(f'data_pre/raw/cocal/2025/{zone}/cocal.csv', io_mode)
+    #df_aggregated = eventually_merge_and_extract_time_categories(cocal_data=cocal_data, aggregate=True, filter=True, arpa_file=f'data_pre/raw/arpa/2025/pm10/{zone}/arpa.csv', station_name=dict_zone_station[zone], coordinates=zone_to_coordinates[zone], parameter_name="Particelle sospese PM10")
+    df_aggregated = eventually_merge_and_extract_time_categories(cocal_data=cocal_data)
     # Apply ML models to get predictions
     df_with_predictions = apply_models(df_aggregated, ref_lat=REF_LAT, ref_lon=REF_LON, max_distance=DISTANCE)
     
     #print(evaluate_models(df_with_predictions))
     
     # Convert back to COCAL format with predictions
-    df_cocal_with_preds = convert_data_back_to_cocal_format_with_predictions(cocal_file=f'data_pre/raw/cocal/2025/{zone}/cocal.csv', df_aggregated_with_preds=df_with_predictions, verbose=True)
+    df_cocal_with_preds = convert_data_back_to_cocal_format_with_predictions(cocal_data=cocal_data, df_aggregated_with_preds=df_with_predictions, verbose=True)
     
     # Save the result
-    #save_csv_data(df_cocal_with_preds, 'data_pre/processed/with_predictions.csv')
+    #save_data(df_cocal_with_preds, 'data_pre/processed/with_predictions.csv', io_mode)
 
 def main():
     # Read command-line arguments with string path to the .csv input file, the .csv output file, the distance in meters threshold, a boolean flag for verbose mode
@@ -528,14 +539,16 @@ def main():
     if args.distance < 0:
         print("Error: Distance threshold must be a non-negative integer.")
         return
+    io_mode = 'csv'
     # Process data (aggregation, feature engineering)
-    df_aggregated = eventually_merge_and_extract_time_categories(cocal_file=args.input)
+    cocal_data = load_data(args.input, io_mode) # DATA LOADING
+    df_aggregated = eventually_merge_and_extract_time_categories(cocal_data=cocal_data)
     # Apply ML models to get predictions
     df_with_predictions = apply_models(df_aggregated, ref_lat=REF_LAT, ref_lon=REF_LON, max_distance=args.distance)
     # Convert back to COCAL format with predictions
-    df_cocal_with_preds = convert_data_back_to_cocal_format_with_predictions(cocal_file=args.input, df_aggregated_with_preds=df_with_predictions, verbose=args.verbose)
+    df_cocal_with_preds = convert_data_back_to_cocal_format_with_predictions(cocal_data=cocal_data, df_aggregated_with_preds=df_with_predictions, verbose=args.verbose)
     # Save the result, any type of data saving must be done here
-    save_csv_data(df_cocal_with_preds, args.output)
+    save_data(df_cocal_with_preds, args.output, io_mode) # DATA SAVING
 
 
 if __name__ == "__main__":
