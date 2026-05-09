@@ -14,4 +14,10 @@ pip3 install -U .
 
 The latter line actually installs the library within the environment.
 
+## Execute model.py
 
+Example of execution from command-line of model.py is:
+
+```sh
+python3 model.py --input /home/username/folder/example.csv --output test.csv --distance 4000 --verbose --only-predictions
+```
