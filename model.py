@@ -320,7 +320,7 @@ def eventually_merge_and_extract_time_categories(cocal_data, aggregate=False, fi
         df_arpa['timestamp'] = df_arpa['timestamp'].dt.tz_localize(None)
         df = df_cocal.merge(df_arpa, on="timestamp")
         if 'ARPA' not in list(df.columns)[-1].upper():
-            raise ValueError(f'The last column here must be the PM from ARPA.')
+            raise ValueError('The last column here must be the PM from ARPA.')
     else:
         df = df_cocal
     #df = df.drop(columns=['PM25_MEAN', 'PM25_MIN', 'PM25_MAX']) if 'PM10' in list(df.columns)[-1].upper() else df.drop(columns=['PM10_MEAN', 'PM10_MIN', 'PM10_MAX'])
@@ -433,7 +433,7 @@ def evaluate_models(df: pd.DataFrame) -> dict:
 # Augmenting Original Data with Predictions
 # =============================================================================
 
-def convert_data_back_to_cocal_format_with_predictions(cocal_data: pd.DataFrame, df_aggregated_with_preds: pd.DataFrame, verbose: bool) -> pd.DataFrame:
+def convert_data_back_to_cocal_format_with_predictions(cocal_data: pd.DataFrame, df_aggregated_with_preds: pd.DataFrame, verbose: bool, only_predictions: bool) -> pd.DataFrame:
     cocal_df = cocal_data
 
     sample_df = cocal_df[cocal_df['sensor'] == 'PM10'].copy()
@@ -457,6 +457,16 @@ def convert_data_back_to_cocal_format_with_predictions(cocal_data: pd.DataFrame,
         print(cocal_df.head(20))
         print(merged_df.head(20))
 
+    if only_predictions:
+        merged_df['time'] = merged_df['time'].astype(str)  # Ensure it's string before splitting
+        merged_df['time'] = merged_df['time'].str.split(".").str[0]
+        merged_df['time'] = pd.to_datetime(merged_df['time'], format="%Y-%m-%d %H:%M:%S")
+        merged_df = merged_df.sort_values(by=['time', 'device']).reset_index(drop=True)
+        merged_df = merged_df[['time', 'lon', 'lat', 'device', 'sensor', 'val', 'gps_kmh', 'gps_dir', 'gps_alt']]
+        if verbose:
+            print(merged_df.head(50))
+        return merged_df
+
     # Add the rows from merged_df to cocal_df and then order by timestamp asceindingly
     cocal_df = pd.concat([cocal_df, merged_df], ignore_index=True)
     # ensure the "time" column is in the correct datetime format and sort by it
@@ -467,6 +477,7 @@ def convert_data_back_to_cocal_format_with_predictions(cocal_data: pd.DataFrame,
     merged_df['time'] = merged_df['time'].str.split(".").str[0]
     merged_df['time'] = pd.to_datetime(merged_df['time'], format="%Y-%m-%d %H:%M:%S")
     cocal_df = cocal_df.sort_values(by=['time', 'device']).reset_index(drop=True)
+    cocal_df = cocal_df[['time', 'lon', 'lat', 'device', 'sensor', 'val', 'gps_kmh', 'gps_dir', 'gps_alt']]
     if verbose:
         print(cocal_df.head(50))
     return cocal_df
@@ -515,6 +526,7 @@ def main():
     parser.add_argument("--input", help="Path to the input .csv file")
     parser.add_argument("--output", help="Path to the output .csv file")
     parser.add_argument("--distance", type=int, help="Distance in meters threshold")
+    parser.add_argument("--only-predictions", action="store_true", help="Output only the predictions without merging back to COCAL format")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose mode")
     args = parser.parse_args()
     
@@ -546,7 +558,7 @@ def main():
     # Apply ML models to get predictions
     df_with_predictions = apply_models(df_aggregated, ref_lat=REF_LAT, ref_lon=REF_LON, max_distance=args.distance)
     # Convert back to COCAL format with predictions
-    df_cocal_with_preds = convert_data_back_to_cocal_format_with_predictions(cocal_data=cocal_data, df_aggregated_with_preds=df_with_predictions, verbose=args.verbose)
+    df_cocal_with_preds = convert_data_back_to_cocal_format_with_predictions(cocal_data=cocal_data, df_aggregated_with_preds=df_with_predictions, verbose=args.verbose, only_predictions=args.only_predictions)
     # Save the result, any type of data saving must be done here
     save_data(df_cocal_with_preds, args.output, io_mode) # DATA SAVING
 
